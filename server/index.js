@@ -367,7 +367,24 @@ app.use(express.json({ limit: '12mb' }));
 app.use('/uploads', express.static(UPLOAD_DIR));
 app.use('/vendor/htm', express.static(path.join(ROOT, 'node_modules/htm/preact')));
 app.use('/vendor/leaflet', express.static(path.join(ROOT, 'node_modules/leaflet/dist')));
-app.use(express.static(path.join(ROOT, 'public')));
+
+// Cache busting. Cloudflare tells browsers to keep .js/.css for hours, so after a deploy people kept
+// running old code. index.html (never cached) loads the client from /v/<build>/..., where <build> is a
+// hash of the client files: a deploy that changes any of them changes every script and style URL.
+// Relative imports inside public/js resolve under the same /v/<build>/ prefix.
+const PUBLIC = path.join(ROOT, 'public');
+const BUILD = (() => {
+  const h = crypto.createHash('sha1');
+  const walk = (dir) => { for (const f of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) { const p = path.join(dir, f.name); if (f.isDirectory()) walk(p); else { h.update(p); h.update(fs.readFileSync(p)); } } };
+  walk(path.join(PUBLIC, 'js')); walk(path.join(PUBLIC, 'css')); h.update(fs.readFileSync(path.join(PUBLIC, 'styles.css')));
+  return h.digest('hex').slice(0, 10);
+})();
+const INDEX_HTML = fs.readFileSync(path.join(PUBLIC, 'index.html'), 'utf8')
+  .replace(/(href|src)="\/(styles\.css|css\/|js\/)/g, `$1="/v/${BUILD}/$2`);
+const sendIndex = (req, res) => { res.set('Cache-Control', 'no-cache'); res.type('html').send(INDEX_HTML); };
+app.get(['/', '/index.html'], sendIndex);
+app.use('/v/:build', express.static(PUBLIC, { maxAge: '365d', immutable: true, index: false }));
+app.use(express.static(PUBLIC, { index: false }));
 
 app.get('/api/events', (req, res) => {
   res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
@@ -1006,6 +1023,6 @@ app.post('/api/upload', auth, (req, res) => {
   res.json({ url: '/uploads/' + name });
 });
 
-app.get(/^\/(?!api|uploads|vendor).*/, (req, res) => res.sendFile(path.join(ROOT, 'public/index.html')));
+app.get(/^\/(?!api|uploads|vendor|v\/).*/, sendIndex);
 
 app.listen(PORT, () => console.log(`Server running at http://localhost:${PORT}`));
