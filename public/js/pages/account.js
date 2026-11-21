@@ -48,7 +48,7 @@ export function Login() {
 
 function DigiLockerMock({ onBack }) {
   const leaves = M().regions.filter((r) => r.type === 'ward');
-  const [f, setF] = useState({ name: '', addressLine: '', regionId: leaves[0].id, consent: false });
+  const [f, setF] = useState({ name: '', addressLine: '', regionId: (leaves.find((r) => r.id === 'w_K-W') || leaves[0]).id, consent: false });
   const [busy, setBusy] = useState(false);
   const submit = async (e) => {
     e.preventDefault();

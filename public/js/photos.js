@@ -28,14 +28,22 @@ const DAMAGE_CATS = new Set(['Pothole', 'Road cave-in', 'Broken paver blocks', '
 
 const hash = (s) => [...String(s || '')].reduce((a, c) => (a * 33 + c.charCodeAt(0)) >>> 0, 5381);
 const pick = (list, key) => list[hash(key) % list.length];
+// No repeats on screen: each post gets the next unused photo of its kind, in the order posts appear,
+// and keeps it for the session. A photo is reused only after every photo of that kind has been shown.
+const given = new Map(), next = { damage: 0, water: 0, works: 0 };
+const POOLS = { damage: DAMAGE, water: WATER, works: WORKS };
+function deal(kind, id) {
+  if (!given.has(id)) { const pool = POOLS[kind]; given.set(id, pool[(hash(kind) + next[kind]++) % pool.length]); }
+  return given.get(id);
+}
 
 // Photo for a post, or null if no illustrative photo fits (normal/admin posts, garbage, traffic...).
 export function postPhoto(p) {
   if (!p) return null;
-  if (p.tag === 'progress') return pick(WORKS, p.id);
+  if (p.tag === 'progress') return deal('works', p.id);
   if (p.tag === 'problem') {
-    if (WATER_CATS.has(p.category)) return pick(WATER, p.id);
-    if (DAMAGE_CATS.has(p.category) || !p.category) return pick(DAMAGE, p.id);
+    if (WATER_CATS.has(p.category)) return deal('water', p.id);
+    if (DAMAGE_CATS.has(p.category) || !p.category) return deal('damage', p.id);
   }
   return null;
 }

@@ -788,16 +788,22 @@ app.get('/api/stories', (req, res) => {
   const viewer = getUser(req);
   const all = (db.stories || []).filter((st) => Date.now() - st.createdAt < (isJoint(st) ? JOINT_TTL : STORY_TTL));
   const live = all.filter((st) => !isJoint(st));
-  const seesJoint = (st) => { if (!viewer) return false; const prob = POST(st.problemPostId); return st.authors.some((a) => viewer.following.positions.includes(a.id) || POS(a.id)?.holderUserId === viewer.id) || prob?.authorId === viewer.id || prob?.upvotes.includes(viewer.id); };
-  const joint = all.filter((st) => isJoint(st) && seesJoint(st)).sort((a, b) => b.createdAt - a.createdAt).map((st) => jointGroup(st, viewer));
+  // Stories are public announcements, so everyone sees them (a brand-new DigiLocker account used to get an
+  // empty strip). Ranking puts what is closest to the viewer first: followed, held, own problem, own area.
+  const near = (st) => { if (!viewer) return 0; const prob = POST(st.problemPostId); return (st.authors.some((a) => viewer.following.positions.includes(a.id) || POS(a.id)?.holderUserId === viewer.id) || prob?.authorId === viewer.id || prob?.upvotes.includes(viewer.id) ? 2 : 0) + (prob && inSubtree(prob.regionId, viewer.regionId) ? 1 : 0); };
+  const joint = all.filter(isJoint).sort((a, b) => near(b) - near(a) || b.createdAt - a.createdAt).map((st) => jointGroup(st, viewer));
   const follows = (st) => viewer && ((st.actor.type === 'position' && viewer.following.positions.includes(st.actor.id)) || (st.actor.type === 'contractor' && (viewer.contractorsFollowed || []).includes(st.actor.id)) || st.authorId === viewer.id);
+  const local = (st) => viewer && st.actor.type === 'position' && POS(st.actor.id) && inSubtree(viewer.regionId, POS(st.actor.id).regionId);
+  const rank = (g) => (g.followed ? 2 : 0) + (g.local ? 1 : 0);
   const groups = {};
-  for (const st of live.filter(follows).sort((a, b) => a.createdAt - b.createdAt)) {
+  for (const st of live.sort((a, b) => a.createdAt - b.createdAt)) {
     const k = st.actor.type + ':' + st.actor.id;
     const label = st.actor.type === 'position' ? POS(st.actor.id)?.title : CON(st.actor.id)?.name;
-    (groups[k] ||= { key: k, actor: st.actor, title: label, person: publicUser(USER(st.authorId))?.name, items: [] }).items.push({ id: st.id, text: st.text, createdAt: st.createdAt, seen: st.seenBy.includes(viewer.id) });
+    const g = (groups[k] ||= { key: k, actor: st.actor, title: label, person: publicUser(USER(st.authorId))?.name, items: [] });
+    g.followed ||= !!follows(st); g.local ||= !!local(st);
+    g.items.push({ id: st.id, text: st.text, createdAt: st.createdAt, seen: !!viewer && st.seenBy.includes(viewer.id) });
   }
-  const list = Object.values(groups).sort((a, b) => (a.items.every((i) => i.seen) - b.items.every((i) => i.seen)) || b.items.at(-1).createdAt - a.items.at(-1).createdAt);
+  const list = Object.values(groups).sort((a, b) => (a.items.every((i) => i.seen) - b.items.every((i) => i.seen)) || rank(b) - rank(a) || b.items.at(-1).createdAt - a.items.at(-1).createdAt);
   const unseenIn = (gs) => gs.reduce((n, g) => n + g.items.filter((i) => !i.seen).length, 0);
   res.json({ groups: [...list, ...joint], unseen: unseenIn(list), jointUnseen: unseenIn(joint) });
 });
