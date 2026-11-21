@@ -1,5 +1,5 @@
 import { html, useState, useEffect, store, useStore, api, post, useData, go, toast, position, person, region, actingAs, ago, positionsIn, chain, STATUS, rs, fmtDate, regionName } from '../lib.js';
-import { PostCard, Tabs, Loading, Empty, ErrorBox, Header, Icon, Avatar, AuthorLine, Sheet, ProjectRow, DemoBanner, StoriesPill, NewStory } from '../components.js';
+import { PostCard, Tabs, Loading, Empty, ErrorBox, Header, Icon, LanguageButton, Avatar, AuthorLine, Sheet, ProjectRow, DemoBanner, StoriesPill, NewStory } from '../components.js';
 
 function RepsStrip() {
   const s = useStore();
@@ -39,7 +39,7 @@ export function Feed({ query }) {
   return html`
     <header class="topbar home">
       <div class="logo">Neta<span>Connect</span></div>
-      <div class="topbar-right"><a class="icon-btn mobile-only" href="#/notifications" aria-label="Notifications"><${Icon} n="bell" s=${28} />${s.unread ? html`<i class="dot-badge">${s.unread}</i>` : null}</a></div>
+      <div class="topbar-right"><${LanguageButton} /><a class="icon-btn mobile-only" href="#/notifications" aria-label="Notifications"><${Icon} n="bell" s=${28} />${s.unread ? html`<i class="dot-badge">${s.unread}</i>` : null}</a></div>
     </header>
     <${RepsStrip} />
     <${PostBox} />
@@ -78,7 +78,7 @@ export function PostPage({ id }) {
 
   return html`
     <${Header} title=${p.tag === 'problem' ? 'Problem' : 'Post'} sub=${p.id} back />
-    <div class="feed"><${PostCard} p=${p} /></div>
+    <div class="feed"><${PostCard} p=${p} full /></div>
     ${data.workOrders.length ? html`<section class="card pad">
       <div class="sec-h"><b>Repair record</b><span class="dim small">Did the fix last?</span></div>
       ${data.workOrders.map((w) => html`<a class="wo-detail" href=${'#/wo/' + w.id}>

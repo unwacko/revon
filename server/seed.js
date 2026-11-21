@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readCsv, km, inPolygon, ist } from './geo.js';
 import fs from 'node:fs';
+import { translate, setLocalityAliases, guessLang } from './translate.js';
 
 const DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'dataset');
 const csv = (f) => readCsv(path.join(DIR, f));
@@ -143,6 +144,11 @@ export function buildSeed() {
   const roadsByWard = {};
   for (const r of roads) (roadsByWard[r.wardCode] ||= []).push(r);
 
+  const aliasMap = {};
+  for (const l of localities) for (const a of l.aliases.split(/[;|,]/).map((x) => x.trim()).filter(Boolean)) aliasMap[a] = l.locality;
+  setLocalityAliases(aliasMap);
+  const englishPlace = (t) => { if (!t) return t; if (aliasMap[t]) return aliasMap[t]; return /[\u0900-\u097F]/.test(t) ? (Object.entries(aliasMap).find(([k]) => t.includes(k))?.[1] || '') : t; };
+
   // ---------------- Geocoding helpers ----------------
   const locIndex = [];
   for (const l of localities) for (const n of [l.locality, ...l.aliases.split(/[;|,]/)].map((s) => s.trim().toLowerCase()).filter(Boolean)) locIndex.push([n, l]);
@@ -185,13 +191,15 @@ export function buildSeed() {
     let road = linked[0] ? roadById[linked[0].roadId] : null;
     if (!road && code) road = (lat && nearestRoad(code, lat, lng)) || roadByText(code, c.description) || (loc && nearestRoad(code, +loc.lat, +loc.lon, 2));
     const category = linked[0]?.workType || c.category_reported;
-    const where = road ? `${road.name}, ${c.locality_text || loc?.locality || ''}` : c.locality_text || loc?.locality || 'Mumbai';
+    const locName = englishPlace(c.locality_text) || loc?.locality || '';
+    const where = road ? `${road.name}${locName ? ', ' + locName : ''}` : locName || 'Mumbai';
+    const english = translate(c.description);
     const regionId = code ? wardRegionId(code) : 'r_bmc';
     const uid = 'u_' + c.complainant_id;
     users.push({ id: uid, role: 'citizen', verified: true, onboarded: true, anonHandle: 'Citizen ' + c.complainant_id.slice(-5), regionId, following: { positions: [], users: [], regions: [] }, createdAt: ist(c.received_at) - 30 * 864e5 });
     posts.push({
       id: c.complaint_id, authorId: uid, actingAs: { type: 'citizen' }, tag: 'problem',
-      title: `${titleCat[category] || category} — ${where.replace(/, $/, '')}`, body: c.description, photoNote: c.photo_description || null, images: [],
+      title: `${titleCat[category] || category} — ${where}`, body: english || c.description, bodyOriginal: english ? c.description : null, originalLanguage: english ? ({ 'hi-en': 'Hinglish', hi: 'Hindi', mr: 'Marathi' }[c.language] || 'Hindi') : null, photoNote: c.photo_description || null, images: [],
       category, categoryReported: c.category_reported, regionId, roadId: road?.id || null, location: lat ? { lat, lng } : null,
       source: { type: 'complaint', channel: c.channel, language: c.language }, upvoteBase: +c.upvotes || 0, upvotes: [],
       status: statusMap[c.status] || 'open', statusDetail: c.status, resolvedAt: ist(c.resolved_at),
@@ -224,9 +232,11 @@ export function buildSeed() {
     const loc = findLocality(s.text);
     const uid = 'u_s_' + s.author_handle.replace(/[^a-z0-9]/gi, '');
     if (!users.some((u) => u.id === uid)) users.push({ id: uid, role: 'citizen', verified: true, onboarded: true, anonHandle: 'Citizen ' + uid.slice(-5).toUpperCase(), regionId: loc ? wardRegionId(loc.ward_code) : 'r_bmc', following: { positions: [], users: [], regions: [] }, createdAt: ist(s.posted_at) - 30 * 864e5 });
-    const firstLine = s.text.split(/[.!?\n]/)[0].trim();
+    const englishText = translate(s.text);
+    const text = englishText || s.text;
+    const firstLine = text.split(/[.!?\n]/)[0].trim();
     posts.push({
-      id: s.post_id, authorId: uid, actingAs: { type: 'citizen' }, tag: 'normal', title: firstLine.length > 90 ? firstLine.slice(0, 87) + '…' : firstLine || 'Post', body: s.text,
+      id: s.post_id, authorId: uid, actingAs: { type: 'citizen' }, tag: 'normal', title: firstLine.length > 90 ? firstLine.slice(0, 87) + '…' : firstLine || 'Post', body: text, bodyOriginal: englishText ? s.text : null, originalLanguage: englishText ? ({ hi: 'Hindi', mr: 'Marathi', 'hi-en': 'Hinglish' }[guessLang(s.text)]) : null,
       source: { type: 'social', channel: s.source }, images: [], mentions: [], linkedProblemIds: [], workOrderIds: [], regionId: loc ? wardRegionId(loc.ward_code) : 'r_bmc', roadId: null,
       upvoteBase: Math.round((+s.likes_or_forwards || 0) / 10), upvotes: [], status: null, viewedByPositions: [], respondedByPositions: [], responsible: [], category: null, location: null, projectId: null,
       moderation: { botVerified: null }, createdAt: ist(s.posted_at),

@@ -6,7 +6,7 @@ import { Responsibles, Structure, RegionPage, PositionPage, ContractorPage, Proj
 import { Dashboard } from './pages/dashboard.js';
 import { Login, Onboarding, Notifications, Me, Settings, Roadmap, logout, switchView } from './pages/account.js';
 
-try { document.documentElement.dataset.theme = localStorage.getItem('theme') || 'dark'; if (document.documentElement.dataset.theme === 'system') delete document.documentElement.dataset.theme; } catch { document.documentElement.dataset.theme = 'dark'; }
+try { document.documentElement.dataset.theme = localStorage.getItem('theme') || 'light'; if (document.documentElement.dataset.theme === 'system') delete document.documentElement.dataset.theme; } catch { document.documentElement.dataset.theme = 'light'; }
 
 const NEEDS_AUTH = new Set(['new', 'notifications', 'me', 'settings', 'dashboard', 'onboarding']);
 

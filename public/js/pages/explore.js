@@ -1,5 +1,5 @@
 import { html, useState, setMode, store, useStore, api, post, useData, go, toast, region, position, contractor, project, person, children, chain, positionsIn, levelLabel, inr, rs, pct, ago, fmtNum, fmtDate, M, STATUS, regionName } from '../lib.js';
-import { Header, Icon, Avatar, Tabs, PostCard, PositionRow, ContractorRow, ProjectRow, RegionRow, WorkOrderRow, Breadcrumb, BudgetBars, AreaMap, FollowButton, Loading, Empty, ErrorBox, StatusPill, Party, Sheet, ComingSoon, MoneyPanel, PlannerPanel, ScorecardPanel, Kpis, BudgetPanel } from '../components.js';
+import { Header, Icon, Avatar, Tabs, PostCard, PositionRow, ContractorRow, ProjectRow, RegionRow, WorkOrderRow, Breadcrumb, BudgetBars, AreaMap, FollowButton, Loading, Empty, ErrorBox, StatusPill, Party, Sheet, ComingSoon, MoneyPanel, PlannerPanel, ScorecardPanel, Kpis, BudgetPanel, LanguageButton } from '../components.js';
 
 // ---------------- Responsibles (was Explore) ----------------
 export function Responsibles() {
@@ -17,7 +17,7 @@ export function Responsibles() {
   } : null;
   const m = city.data;
   return html`
-    <header class="topbar"><div class="search"><${Icon} n="search" s=${20} /><input placeholder="Search wards, roads, officials, contractors" value=${q} onInput=${(e) => setQ(e.target.value)} aria-label="Search" /></div></header>
+    <header class="topbar"><div class="search"><${Icon} n="search" s=${20} /><input placeholder="Search wards, roads, officials, contractors" value=${q} onInput=${(e) => setQ(e.target.value)} aria-label="Search" /></div><${LanguageButton} /></header>
     ${res ? html`<div class="list">
       ${res.regions.map((r) => html`<${RegionRow} r=${r} />`)}
       ${res.roads.map((r) => html`<a class="row" href=${'#/road/' + r.id}><div class="region-ic"><${Icon} n="road" s=${22} /></div><div class="row-main"><div class="row-t">${r.name} · segment ${r.segment}</div><div class="row-s">${regionName(r.regionId)}${r.underDlp ? ' · under DLP' : ''}</div></div></a>`)}

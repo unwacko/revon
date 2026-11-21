@@ -40,6 +40,8 @@ const P = {
   compass: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM15.5 8.5l-2 5-5 2 2-5z',
   moon: 'M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z',
   menu: 'M4 6h16M4 12h16M4 18h16',
+  globe: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3 12h18M12 3c2.5 2.5 3.5 6 3.5 9s-1 6.5-3.5 9c-2.5-2.5-3.5-6-3.5-9s1-6.5 3.5-9z',
+  down: 'M6 9l6 6 6-6',
 };
 export const Icon = ({ n, s = 24, w = 1.9, fill }) => html`<svg class="ic" width=${s} height=${s} viewBox="0 0 24 24" fill=${fill || 'none'} stroke="currentColor" stroke-width=${w} stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d=${P[n]} /></svg>`;
 
@@ -68,11 +70,30 @@ export const Loading = () => html`<div class="loading"><span></span><span></span
 export const Empty = ({ children }) => html`<div class="empty">${children}</div>`;
 export const ErrorBox = ({ error }) => html`<div class="empty error">${error}</div>`;
 
+const LANGUAGES = [
+  ['English', 'English'], ['मराठी', 'Marathi'], ['हिन्दी', 'Hindi'],
+  ['অসমীয়া', 'Assamese'], ['বাংলা', 'Bengali'], ['बड़ो', 'Bodo'], ['डोगरी', 'Dogri'], ['ગુજરાતી', 'Gujarati'], ['ಕನ್ನಡ', 'Kannada'],
+  ['کٲشُر', 'Kashmiri'], ['कोंकणी', 'Konkani'], ['मैथिली', 'Maithili'], ['മലയാളം', 'Malayalam'], ['মৈতৈলোন্', 'Manipuri'], ['नेपाली', 'Nepali'],
+  ['ଓଡ଼ିଆ', 'Odia'], ['ਪੰਜਾਬੀ', 'Punjabi'], ['संस्कृतम्', 'Sanskrit'], ['ᱥᱟᱱᱛᱟᱲᱤ', 'Santali'], ['سنڌي', 'Sindhi'], ['தமிழ்', 'Tamil'], ['తెలుగు', 'Telugu'], ['اردو', 'Urdu'],
+];
+// Language picker: UI only for now (all 22 scheduled languages; Marathi and Hindi first).
+export function LanguageButton() {
+  const [open, setOpen] = useState(false);
+  useEffect(() => { if (!open) return; const close = () => setOpen(false); setTimeout(() => addEventListener('click', close), 0); return () => removeEventListener('click', close); }, [open]);
+  return html`<div class="lang">
+    <button class="lang-btn" aria-label="Change language" aria-expanded=${open} onClick=${(e) => { e.stopPropagation(); setOpen(!open); }}><${Icon} n="globe" s=${22} /><span>EN</span><${Icon} n="down" s=${16} /></button>
+    ${open ? html`<div class="lang-menu" role="menu" onClick=${(e) => e.stopPropagation()}>
+      <div class="lang-h">Language</div>
+      ${LANGUAGES.map(([native, en], i) => html`${i === 3 ? html`<div class="lang-sep">All scheduled languages</div>` : null}<button role="menuitem" class=${'lang-item' + (i === 0 ? ' on' : '')} onClick=${() => { setOpen(false); if (i) toast(en + ' — coming soon'); }}><span>${native}</span>${native !== en ? html`<small>${en}</small>` : null}${i === 0 ? html`<${Icon} n="check" s=${18} />` : null}</button>`)}
+    </div>` : null}
+  </div>`;
+}
+
 export function Header({ title, back, right, sub }) {
   return html`<header class="topbar">
     ${back ? html`<button class="icon-btn" aria-label="Back" onClick=${() => (history.length > 1 ? history.back() : go('#/'))}><${Icon} n="back" s=${28} /></button>` : null}
     <div class="topbar-title"><div class="t1">${title}</div>${sub ? html`<div class="t2">${sub}</div>` : null}</div>
-    <div class="topbar-right">${right}</div>
+    <div class="topbar-right">${right}<${LanguageButton} /></div>
   </header>`;
 }
 
@@ -123,7 +144,11 @@ export function RepairStrip({ wo }) {
   </a>`;
 }
 
-export function PostCard({ p, compact }) {
+function Original({ p, full }) {
+  const [show, setShow] = useState(false);
+  return html`<div class="original"><span class="dim">Translated from ${p.originalLanguage}</span>${full ? html` · <button class="link-btn" onClick=${() => setShow(!show)}>${show ? 'Hide original' : 'Show original'}</button>` : null}${show ? html`<p class="orig-text">${p.bodyOriginal}</p>` : null}</div>`;
+}
+export function PostCard({ p, compact, full }) {
   const [up, setUp] = useState({ on: p.upvoted, n: p.upvoteCount });
   const [saved, setSaved] = useState(false);
   useEffect(() => setUp({ on: p.upvoted, n: p.upvoteCount }), [p.upvoted, p.upvoteCount]);
@@ -135,9 +160,10 @@ export function PostCard({ p, compact }) {
   };
   const open = () => go('#/post/' + p.id);
   const fmt = (n) => (n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K' : n);
-  return html`<article class=${'post post-' + p.tag}>
-    <h3 class="post-title" onClick=${open}>${p.title}</h3>
-    <p class=${'post-body' + (compact ? ' clamp' : '')} onClick=${open}>${p.body}</p>
+  return html`<article class=${'post post-' + p.tag + (full ? ' full' : '')} onClick=${full ? undefined : (e) => { if (e.target.closest('a,button,input,label')) return; if (getSelection()?.toString()) return; open(); }}>
+    <h3 class="post-title">${p.title}</h3>
+    <p class=${'post-body' + (compact ? ' clamp' : '')}>${p.body}</p>
+    ${p.bodyOriginal ? html`<${Original} p=${p} full=${full} />` : null}
     <div class="post-tags"><${TagPill} tag=${p.tag} />${p.category ? html`<span class="chip">${p.category}</span>` : null}<${StatusPill} status=${p.status} />${p.categoryReported && p.categoryReported !== p.category ? html`<span class="chip dim" title="Category picked by the citizen">tagged “${p.categoryReported}”</span>` : null}</div>
     <div class="post-media">
       <${AuthorLine} ...${p} />

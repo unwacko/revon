@@ -465,3 +465,31 @@ input.switch:checked { background: var(--text); } input.switch:checked::after { 
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--nav-h) + 20px + env(safe-area-inset-bottom)); background: var(--text); color: var(--bg); padding: 12px 18px; border-radius: 10px; font-size: 14px; z-index: 400; max-width: calc(100% - 32px); }
 .nav-l { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .nav-bottom .nav-item { height: 52px; }
+
+/* Language picker */
+.lang { position: relative; }
+.lang-btn { display: inline-flex; align-items: center; gap: 4px; height: 40px; padding: 0 10px; border-radius: 999px; background: var(--raised2); font-weight: 700; font-size: 14px; }
+.lang-btn:hover { background: var(--hover); }
+.lang-menu { position: absolute; right: 0; top: 46px; width: 240px; max-height: 70vh; overflow-y: auto; background: var(--bg); border: 1px solid var(--line2); border-radius: 14px; box-shadow: 0 12px 32px rgba(0,0,0,.18); padding: 8px; z-index: 120; }
+.lang-h { font-weight: 700; padding: 8px 10px; }
+.lang-sep { font-size: 12px; font-weight: 600; color: var(--muted); padding: 12px 10px 6px; border-top: 1px solid var(--line); margin-top: 6px; }
+.lang-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 10px; border-radius: 8px; text-align: left; font-size: 15px; }
+.lang-item:hover { background: var(--hover); }
+.lang-item small { color: var(--muted); font-size: 12px; }
+.lang-item .ic { margin-left: auto; color: var(--brand); }
+.lang-item.on span { font-weight: 700; }
+@media (min-width: 768px) { .topbar.home { display: flex; } .topbar.home .logo { visibility: hidden; } }
+/* Whole post opens on click (like Reddit) */
+.post:not(.full) { cursor: pointer; }
+.post:not(.full):hover .post-title { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 4px; }
+.post.full .post-title { font-size: 32px; }
+.original { font-size: 13px; margin: -4px 0 12px; }
+.orig-text { margin-top: 8px; padding: 10px 12px; background: var(--raised); border-radius: 10px; font-size: 15px; }
+/* Light theme status pills */
+:root[data-theme="light"] .st-open { background: #fee2e2; color: #991b1b; } :root[data-theme="light"] .st-acknowledged { background: #e0f2fe; color: #075985; }
+:root[data-theme="light"] .st-in_progress, :root[data-theme="light"] .st-bidding { background: #fef3c7; color: #92400e; }
+:root[data-theme="light"] .st-resolved, :root[data-theme="light"] .st-completed { background: #dcfce7; color: #166534; }
+:root[data-theme="light"] .lang-menu { box-shadow: 0 12px 32px rgba(0,0,0,.12); }
+:root[data-theme="light"] .act.on { color: #b45309; }
+.login-lang { display: flex; justify-content: flex-end; }
+.set-h { display: flex; justify-content: space-between; align-items: center; }

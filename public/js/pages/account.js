@@ -1,5 +1,5 @@
 import { html, useState, useEffect, store, useStore, setStore, api, post, useData, go, toast, region, position, contractor, person, chain, children, positionsIn, levelLabel, loadMeta, safeSet, setMode, refreshUnread, ago, M, defaultMode, regionName } from '../lib.js';
-import { Header, Icon, Avatar, Tabs, PostCard, PositionRow, FollowButton, Loading, Empty, ComingSoon, AreaMap, DemoBanner } from '../components.js';
+import { Header, Icon, Avatar, LanguageButton, Tabs, PostCard, PositionRow, FollowButton, Loading, Empty, ComingSoon, AreaMap, DemoBanner } from '../components.js';
 import { ModeSwitch } from './dashboard.js';
 
 async function signIn(token, me) {
@@ -30,6 +30,7 @@ export function Login() {
   const demo = useData(() => api('/demo-accounts'), []);
   if (step === 'digilocker') return html`<${DigiLockerMock} onBack=${() => setStep('welcome')} />`;
   return html`<div class="login">
+    <div class="login-lang"><${LanguageButton} /></div>
     <div class="login-hero">
       <div class="logo big">Neta<span>Connect</span></div>
       <p>Report road problems. See who is responsible — from your ward engineer to the Prime Minister — where the money went, and whether the fix lasted.</p>
@@ -160,7 +161,7 @@ const SECTIONS = [
 export function Settings({ query = {} }) {
   const s = useStore();
   const sec = query.s || (window.innerWidth >= 900 ? 'account' : null);
-  const [theme, setTheme] = useState(document.documentElement.dataset.theme || 'dark');
+  const [theme, setTheme] = useState(document.documentElement.dataset.theme || 'system');
   const applyTheme = (t) => { setTheme(t); if (t === 'system') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t; safeSet('theme', t); };
   const me = s.meta.me;
   const title = SECTIONS.flatMap((x) => x[1]).find((x) => x[0] === sec)?.[2];
@@ -168,7 +169,7 @@ export function Settings({ query = {} }) {
     account: html`<section class="set-card"><div class="kv"><span>Verified via</span><b>DigiLocker ✓</b></div><div class="kv"><span>Public name</span><b>${me.handle}</b></div><div class="kv"><span>Home ward</span><a href=${'#/region/' + me.regionId}>${regionName(me.regionId)}</a></div></section><${ComingSoon} label="Update address via DigiLocker" icon="pin" block />`,
     acting: me.positionIds.length || me.contractorIds.length || me.role === 'admin' ? html`<${ModeSwitch} />` : html`<section class="set-card"><p>You use Neta Connect as a citizen. If you are elected or hired into a position, or join a contractor, you'll be able to switch views here.</p></section>`,
     notifications: html`${['Progress on my problem posts', 'Posts from people I follow', 'Position changes in my ward', 'Election announcements'].map((l) => html`<label class="set-toggle"><span>${l}</span><input type="checkbox" class="switch" checked /></label>`)}<${ComingSoon} label="Push & SMS notifications" icon="bell" block />`,
-    appearance: html`<div class="chips">${['dark', 'light', 'system'].map((t) => html`<button class=${'chip-btn' + (theme === t ? ' on' : '')} onClick=${() => applyTheme(t)}>${t[0].toUpperCase() + t.slice(1)}</button>`)}</div>`,
+    appearance: html`<div class="chips">${['light', 'dark', 'system'].map((t) => html`<button class=${'chip-btn' + (theme === t ? ' on' : '')} onClick=${() => applyTheme(t)}>${t[0].toUpperCase() + t.slice(1)}</button>`)}</div>`,
     privacy: html`<section class="set-card"><p>Citizens are anonymous. Others see only your ward and your posts. Your name appears only if you are assigned a public position or join a contractor.</p></section><${ComingSoon} label="DigiLocker privacy & no-leak guarantee" icon="shield" block />`,
     roadmap: html`<${RoadmapList} />`,
     structure: html`<a class="btn btn-ghost" href="#/structure">Open the explainer ›</a>`,
@@ -176,7 +177,7 @@ export function Settings({ query = {} }) {
   }[sec];
   return html`<div class=${'settings' + (sec ? ' has-pane' : '')}>
     <aside class="set-nav">
-      <div class="set-h">Settings</div>
+      <div class="set-h">Settings <${LanguageButton} /></div>
       ${SECTIONS.map(([h, items]) => html`<div class="set-group">${h}</div>${items.map(([k, ic, label, sub]) => html`<a class=${'set-item' + (sec === k ? ' on' : '')} href=${'#/settings?s=' + k}><${Icon} n=${ic} s=${26} /><div class="grow"><div>${label}</div>${sub ? html`<div class="dim small">${sub}</div>` : null}</div></a>`)}`)}
       <div class="set-group">Session</div>
       <button class="set-item" onClick=${switchView}><${Icon} n="swap" s=${26} /><div class="grow">${s.mode === 'citizen' ? 'Switch to official view' : 'Switch to citizen view'}</div></button>

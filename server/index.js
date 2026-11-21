@@ -13,7 +13,7 @@ const DATA_DIR = process.env.DATA_DIR || path.join(ROOT, 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
 const PORT = Number(process.env.PORT || 3000);
-const SEED_VERSION = 4;
+const SEED_VERSION = 5;
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 

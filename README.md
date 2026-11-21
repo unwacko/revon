@@ -6,6 +6,12 @@
 2. **Did the fix last?** Every complaint links to the work order that fixed it: cost vs the rate card, time target, and whether it re-opened within 30 days. Contractor scorecards compare each job with peers doing the same work in the same ward.
 3. **Where should the next rupee go?** A risk-ranked planner covering open complaints, repeat failures, flood hotspots, traffic, accidents and nearby hospitals or schools. It recommends the longest-lasting repair method and fits the list to the remaining budget. Roads still under DLP go back to the original contractor.
 
+## Deploy
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/unwacko/revvon)
+
+Uses `render.yaml` (free plan). The database is rebuilt from `/dataset` on each start, so posts made in the app reset when the free instance restarts or redeploys. Moving data to Postgres is the next step for a permanent deployment.
+
 ## Run
 
 ```bash
@@ -24,6 +30,8 @@ How the data maps into the app:
 - Complaints → 🟡 problem posts. The category is corrected from the linked work order; the citizen's own tag is still shown.
 - Work orders → 🟣 progress updates from the ward engineer, with a repair record on each problem.
 - Social posts → ⚪ normal posts.
+- Everything is shown in English: the dataset's Hindi, Marathi and Hinglish texts are translated by rules in `server/translate.js` (all 2,291 covered), with the original one tap away.
+- A language picker (22 scheduled languages, Marathi and Hindi first) is UI only for now.
 
 Audit flags:
 - **Paid during DLP**: road still under its Defect Liability Period.
@@ -38,7 +46,7 @@ Flags are prompts to check the records, not proof of wrongdoing.
 - Node + Express (`server/`), JSON-file persistence (`data/db.json`), live sync over Server-Sent Events.
 - `server/analytics.js`: audit flags, money trail, fair scorecards, next-rupee planner.
 - Preact + htm client with no build step (`public/js`), Leaflet with the dataset's ward polygons. Click a ward to zoom into it.
-- Layout follows Instagram: icon rail, two-pane settings, stories. Font is Reddit Sans; dark theme by default.
+- Layout follows Instagram: icon rail, two-pane settings, stories. Font is Reddit Sans; light theme by default.
 
 ## Hierarchy
 India (PM) → Maharashtra (CM, PWD, MMRDA) → Konkan Division → Greater Mumbai / BMC (Mayor, Commissioner, Chief Engineers; Collectors of Mumbai City and Mumbai Suburban) → 7 zones (Deputy Municipal Commissioners) → 24 wards (Assistant Commissioner, Executive Engineer Roads, Assistant Engineer Storm Water Drains, Corporator). The rural Panchayati Raj track is explained at `#/structure`.

@@ -1,0 +1,12 @@
+# One-click deploy: https://render.com/deploy?repo=https://github.com/unwacko/revvon
+services:
+  - type: web
+    name: neta-connect
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /api/meta
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
