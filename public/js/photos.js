@@ -4,6 +4,18 @@
 const P = (file, artist, license) => ({ src: file.startsWith('/') ? file : '/img/stories/' + file, artist, license });
 
 const DAMAGE = [
+  P("/img/photos/a-photo-of-a-pothole-2021-07-11.jpg", "Thomas Booker (CoderThomasB)", "CC BY-SA 4.0"),
+  P("/img/photos/a-pothole-in-dilova-street-in-kyiv.jpg", "\u0420\u043e\u043c\u0430\u043d \u0420\u044f\u0431\u0435\u043d\u043a\u043e", "CC0"),
+  P("/img/photos/bielsko-bia-a-ulica-widok-uszkodzona-dziurawa-droga-01.jpg", "Kamil Czai\u0144ski", "CC BY-SA 4.0"),
+  P("/img/photos/bielsko-bia-a-ulica-widok-uszkodzona-dziurawa-droga-02.jpg", "Kamil Czai\u0144ski", "CC BY-SA 4.0"),
+  P("/img/photos/langensteins-pothole-new-orleans.jpg", "Infrogmation of New Orleans", "CC BY-SA 2.5"),
+  P("/img/photos/lubang-jalan-di-persimpangan-jalan-cyber-1-senai-johor.jpg", "Encik Tekateki", "CC BY-SA 4.0"),
+  P("/img/photos/nasty-pothole-in-the-middle-of-virginia-avenue.jpg", "Ser Amantio di Nicolao", "CC BY-SA 4.0"),
+  P("/img/photos/newport-st-james-street-pothole-in-february-2010-2.jpg", "Editor5807", "CC BY 3.0"),
+  P("/img/photos/pothole-in-an-asphalt-pavement.jpg", "Frankie Fouganthin", "CC BY-SA 4.0"),
+  P("/img/photos/pothole-in-potomac-after-rain.jpg", "Ser Amantio di Nicolao", "CC BY-SA 4.0"),
+  P("/img/photos/pothole-in-villeray-montr-al.jpg", "Miguel Tremblay", "Public domain"),
+  P("/img/photos/potholes-on-asphalt-road-20171023.jpg", "Santeri Viinam\u00e4ki", "CC BY-SA 4.0"),
   P("/img/photos/potholes-1-november-2026.jpg", "Sbb1413", "CC BY-SA 3.0"),
   P("/img/photos/roads-deformed-t-munnekollala-bengaluru.jpg", "Gangaasoonu", "CC BY-SA 4.0"),
   P("/img/photos/big-fatal-hole-in-a-delhi-road.jpg", "Rrthakur22", "CC BY-SA 4.0"),
