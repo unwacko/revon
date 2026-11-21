@@ -165,9 +165,10 @@ export function RepairStrip({ wo }) {
 // labelled 16:9 holder is shown. The dataset only has text descriptions of photos (its photo_url
 // values are placehold.co placeholders), so that description becomes the holder's caption.
 // To fill a holder later, add an image URL to the post's `images` array.
-export function PostMedia({ p, note = true }) {
+export function PostMedia({ p, note = true, hideEmpty = false }) {
   const imgs = (p.images || []).filter(Boolean);
   const ill = !imgs.length && postPhoto(p);
+  if (!imgs.length && !ill && hideEmpty) return null; // feed: image only if there is one
   if (ill) return html`<figure class="post-figure post-figure-ill">
     <div class="post-images n1"><img src=${ill.src} alt=${p.photoNote || 'Illustrative photo of a road problem'} loading="lazy" /></div>
     <figcaption>${credit(ill)}</figcaption>
@@ -204,7 +205,7 @@ export function PostCard({ p, compact, full }) {
     ${full ? html`<h1 class="post-title">${p.title}</h1>` : html`<h3 class="post-title">${p.title}</h3>`}
     <p class=${'post-body' + (compact ? ' clamp' : '')}>${p.body}</p>
     <div class="post-tags"><${TagPill} tag=${p.tag} />${p.category ? html`<span class="chip">${p.category}</span>` : null}<${StatusPill} status=${p.status} /></div>
-    <${PostMedia} p=${p} note=${false} />
+    <${PostMedia} p=${p} note=${false} hideEmpty=${!full} />
     <div class="actions">
       <button class=${'act' + (up.on ? ' on' : '')} onClick=${vote} aria-label="Upvote"><${Icon} n="up" s=${24} fill=${up.on ? 'currentColor' : 'none'} /><span>${fmt(up.n)}</span></button>
       <button class="act" onClick=${open} aria-label="Comments"><${Icon} n="comment" s=${24} /><span>${fmt(p.commentCount + (p.progressUpdates?.length || 0))}</span></button>
