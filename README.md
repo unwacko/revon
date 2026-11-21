@@ -1,16 +1,15 @@
 # Revon
 
-### Follow the rupee. From the pothole to the Prime Minister.
+### Follow every problem from a pothole to national taxation, and see who is accountable for whom.
 
-**Revon is a citizen-to-official accountability platform that shows who is responsible for a broken road, where the repair money went, and whether the fix actually lasted.**
+**Revon is a social platform where people come together to raise the problems that matter to them, and ministers and officials can see those problems from their areas and react to them.** Officials get a clear picture of what matters most, and everyone can see who is responsible for a broken road, where the repair money went, and whether the fix actually lasted.
 Built on a Mumbai monsoon-roads dataset (24 wards, 6,501 complaints, 2,499 work orders).
 
 ### Live demo: **[revon.journeytix.com](https://revon.journeytix.com)**
 
-Pick any demo account on the login screen. Citizen accounts open the feed; official accounts open their dashboard.
+Pick any demo account on the login screen. Citizen accounts open the feed; official accounts open their dashboards.
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/unwacko/revvon)
-&nbsp;![License: MIT](https://img.shields.io/badge/license-MIT-green)
+![License: MIT](https://img.shields.io/badge/license-MIT-green)
 &nbsp;![Node 22+](https://img.shields.io/badge/node-%E2%89%A522-blue)
 &nbsp;![No build step](https://img.shields.io/badge/client-no%20build%20step-lightgrey)
 
@@ -20,20 +19,27 @@ Pick any demo account on the login screen. Citizen accounts open the feed; offic
 
 1. [The problem](#1-the-problem)
 2. [Our solution](#2-our-solution)
-3. [Features](#3-features)
-4. [Why Revon is different](#4-why-revon-is-different)
-5. [Try it in 60 seconds](#5-try-it-in-60-seconds)
-6. [How it works (architecture)](#6-how-it-works)
-7. [Data and honesty notes](#7-data-and-honesty-notes)
-8. [Roadmap](#8-roadmap)
-9. [Hierarchy modelled](#9-the-accountability-hierarchy-we-model)
-10. [License](#10-license)
+3. [Why a social network, not a complaint form](#3-why-a-social-network-not-a-complaint-form)
+4. [How it works for people](#4-how-it-works-for-people)
+5. [Features](#5-features)
+6. [Trust and safety](#6-trust-and-safety)
+7. [Why Revon is different](#7-why-revon-is-different)
+8. [Try it in 60 seconds](#8-try-it-in-60-seconds)
+9. [How it works (architecture)](#9-how-it-works)
+10. [Data and honesty notes](#10-data-and-honesty-notes)
+11. [Roadmap](#11-roadmap)
+12. [The accountability hierarchy we model](#12-the-accountability-hierarchy-we-model)
+13. [License](#13-license)
 
 ---
 
 ## 1. The problem
 
-Every monsoon, Mumbai spends crores repairing the same roads. Citizens complain, a patch is laid, the rain returns, and the pothole reopens. Nobody can easily answer three basic questions:
+**Nobody knows who is responsible.** Citizens cannot tell which official owns which job, or whom to report to. So people tag the wrong official for the wrong job, and the problem goes nowhere.
+
+**Our complaints live on foreign platforms.** Civic complaints are raised on platforms run by foreign companies, whose interests and misinformation can shape what people see. Revon is built in India, so its content is created and monitored locally.
+
+Take Mumbai's roads. Every monsoon, the city spends crores repairing the same stretches. Citizens complain, a patch is laid, the rain returns, and the pothole reopens. Nobody can easily answer three basic questions:
 
 | Question citizens can't answer today | Why it's hard |
 |---|---|
@@ -45,23 +51,55 @@ The result is a loop with no memory: the same stretch is repaired again next yea
 
 ## 2. Our solution
 
-Revon connects citizens with **everyone accountable for a road, from the ward engineer up to the Prime Minister**, and answers three questions for every ward, road and contractor:
+**One Indian network where every problem has an owner.** Revon is built on three things:
+
+| | What it is |
+|---|---|
+| **Area** | Ward, city, state, country. Every area has its own public page. |
+| **Position** | A tag held by one citizen at a time, with a public history. Each area defines its own positions. |
+| **Person** | The verified citizen who holds the position and answers for it. |
+
+For every ward, road and contractor, Revon answers three questions:
 
 1. **Where did the money go?** A money trail by ward, zone and city: budget vs spend, by contractor, issue, method and month, plus audit flags.
 2. **Did the fix last?** Every complaint links to the work order that fixed it: cost vs the rate card, time target, and whether it re-opened within 30 days. Contractor scorecards compare each job with peers doing the same work in the same ward.
 3. **Where should the next rupee go?** A risk-ranked planner combining open complaints, repeat failures, flood hotspots, traffic, accidents and nearby hospitals or schools. It recommends the longest-lasting repair method and fits the list to the remaining budget. Roads still under their Defect Liability Period (DLP) go back to the original contractor, not the public purse.
 
-It all sits in a familiar, social-media-style interface so that ordinary citizens actually use it: posts, stories, follows, upvotes and comments, but wired to the real chain of responsibility.
+## 3. Why a social network, not a complaint form
 
-## 3. Features
+On a normal complaint system, one person files a complaint and one authority is meant to answer, so it is easy to skip. On Revon, anyone can post, others see it and upvote it, and many voices together make a problem hard to ignore.
+
+- **Enjoyable.** People come back to it, unlike a form you fill once and forget.
+- **Relatable.** Neighbours see your problem and say "same here", so nobody feels alone.
+- **Pressure.** Upvotes show officials what matters most, so a supported problem is hard to ignore.
+
+**A form hides problems. A network shows them.**
+
+## 4. How it works for people
+
+### The citizen journey
+1. **Sign in.** One verified account per real person. The prototype uses a simulated DigiLocker screen; real DigiLocker sign-in is on the roadmap.
+2. **Follow.** Onboarding shows the positions in your area, main ones first, with follow buttons.
+3. **Report.** Post a problem with a photo and location. Revon suggests who is responsible, and you can adjust the suggestion before posting.
+4. **Watch it move.** The responsible position sees it on its dashboard. Progress updates (purple) from officials appear on your original problem, and you are notified.
+
+### The official journey
+1. **See what matters.** A position holder opens their dashboard, which shows the problems routed to them, with upvotes and status.
+2. **Act.** Update a problem's status, assign it, and post progress updates linked to the problems they cover.
+3. **Create a project.** Add a budget, link it to the problems it will fix, and open it for bids.
+4. **Choose in public.** Contractors bid; the official awards one and publishes the reason ("why this contractor") on the public project page.
+5. **Celebrate together.** Two or three authorities that worked on one problem can publish a single joint "solved" story.
+
+## 5. Features
 
 ### For citizens
 - **Problem posts (yellow)** with photo and location; the app suggests who is responsible and the citizen can choose or adjust.
 - **Smart responsibility routing**: `/api/suggest` and `/api/route-suggest` map a location and issue to the right ward engineer, zone officer and body.
-- **Progress updates (purple)** from the ward engineer appear on the original problem, with a full repair record.
-- **Normal posts (white)** for community discussion, plus **stories** and **joint solved stories** where citizen and official celebrate a fix together.
+- **Progress updates (purple)** from the responsible authority appear on the original problem, with a full repair record.
+- **Normal posts (white)** for community discussion, plus **stories** and **joint solved stories** where several authorities announce a fix together.
 - **Follow** officials, wards and contractors; upvote and comment; notifications for progress on your problems.
 - **Anonymous by default**: others see only your ward and posts.
+- **Reddit-style threads**: open any post to read and reply to the full conversation.
 - **Live updates** across devices via Server-Sent Events.
 - **English-first, with a language picker** (22 scheduled languages; Marathi and Hindi first). Dataset text in Hindi, Marathi and Hinglish is auto-translated by rules.
 
@@ -74,7 +112,7 @@ It all sits in a familiar, social-media-style interface so that ordinary citizen
   - **Late**, with heavy-rain context.
   - **Fix did not last**: re-opened within 30 days.
 - **Fair contractor scorecards**: each job is compared with peers doing the same work in the same ward, so contractors aren't punished for hard wards.
-- **Interactive ward map** with the dataset's real ward polygons (Leaflet); click a ward to zoom in.
+- **Interactive ward map** with the dataset's ward polygons (Leaflet); click a ward to zoom in.
 - **Next-rupee planner**: risk-ranked, budget-aware repair list.
 - **Road and work-order pages** showing the full history of any segment.
 - **Structure page** explaining how India's governance levels connect.
@@ -82,14 +120,27 @@ It all sits in a familiar, social-media-style interface so that ordinary citizen
 ### For officials
 - **Role-based dashboard** per position: incoming problems, status, assignments, workload.
 - **Update status and assign** problems to the right person; every assignment is shown publicly with its source (rules, poster or an official).
-- **Projects and bids**: create a project, collect contractor bids, award one, and publish the reason ("why this contractor") on the public project page.
+- **Projects and bids**: create a project, collect contractor bids, award one, and publish the reason on the public project page.
+- **Joint solved stories** with up to two other authorities.
 - **Contractor management** per position and a public record of work.
 - **Admin view** for assigning positions, adding contractors and reviewing users.
 
 ### For contractors
-- Public **scorecard** of their own monsoon work, with fair peer comparison, and a way to follow and respond to projects.
+- Public **scorecard** of their own monsoon work, with fair peer comparison, and a way to bid on and respond to projects.
 
-## 4. Why Revon is different
+## 6. Trust and safety
+
+| Protection | Status |
+|---|---|
+| **Verified accounts**: one account per real person, so there are no bots | Simulated DigiLocker sign-in in the prototype; real DigiLocker is on the roadmap |
+| **Anonymous to the public**: citizens are shown by ward and posts only | Built |
+| **Role rules**: citizens post problems and normal posts; officials and contractors post only progress updates linked to problems or projects; contractors only for projects assigned to them | Built, enforced by the server |
+| **Only the responsible can respond**: an official answers on a problem only where their position is responsible | Built |
+| **Upvotes only**: there is no downvote, so nobody can pile on | Built |
+| **Posting and upvoting limited to your own area**, so outsiders cannot mob a topic | Designed, not built yet |
+| **Bots** that verify post tags and block promotional, vulgar or policy-breaking content | Planned (shown as "Soon") |
+
+## 7. Why Revon is different
 
 Complaint apps and grievance portals exist. Revon is built around what they typically don't do.
 
@@ -97,7 +148,7 @@ Complaint apps and grievance portals exist. Revon is built around what they typi
 |---|---|---|---|
 | Routes to the *right* official | Generic department queue | Citizen must know whom to tag | Suggests responsible officials by location and issue; officials can reassign publicly |
 | Shows the money | Usually no | No | Money trail by ward, contractor, issue and month |
-| Links complaint → work order → cost | Rarely public | No | Every complaint joined to its work order and rate card |
+| Links complaint, work order and cost | Rarely public | No | Every complaint joined to its work order and rate card |
 | Checks if the fix lasted | Complaint closed = done | No | 30-day re-open detection, repeat-failure tracking |
 | Flags suspicious billing | No | No | Audit flags (DLP, double billing, over rate card), with a "check, not proof" framing |
 | Fair to contractors | n/a | Pile-ons | Peer-normalised scorecards |
@@ -107,9 +158,9 @@ Complaint apps and grievance portals exist. Revon is built around what they typi
 
 **In one line:** others collect complaints; Revon closes the loop between the complaint, the rupee and the result.
 
-## 5. Try it in 60 seconds
+## 8. Try it in 60 seconds
 
-**Live deploy:** [revon.journeytix.com](https://revon.journeytix.com), or deploy your own copy with the Deploy to Render button (free plan; the database resets on restart).
+**Live demo:** [revon.journeytix.com](https://revon.journeytix.com). Pick any demo account on the login screen.
 
 **Run locally** (Node 22+):
 
@@ -123,14 +174,15 @@ Open `http://<your-computer-ip>:3000` on a phone on the same Wi-Fi. Demo account
 
 **Suggested judge walkthrough**
 
-1. Log in as a demo citizen and open the feed. Tap a yellow problem post to see its linked repair record.
+1. Log in as a demo citizen and open the feed. Tap a yellow problem post to open its thread and see its linked repair record.
 2. Open **Responsibles** and a ward, then the **Money trail** tab: budget vs spend, by contractor.
 3. Open **Audit flags** and **Contractor scorecards** (`#/scorecards`).
 4. Open the **Planner** for a ward and see the risk-ranked next repairs.
 5. Switch to an official account and open **Dashboard**; update a problem's status and watch it appear live on the citizen side.
-6. Visit `#/roadmap` for what is coming next.
+6. As an official, open a problem post and try **Publish joint solved story**.
+7. Visit `#/roadmap` for what is coming next.
 
-## 6. How it works
+## 9. How it works
 
 ```
  /dataset (CSV/GeoJSON)  ->  server/seed.js  ->  data/db.json
@@ -145,29 +197,35 @@ Open `http://<your-computer-ip>:3000` on a phone on the same Wi-Fi. Demo account
 - **Backend:** Node + Express 5, JSON-file persistence, live sync over SSE.
 - **Analytics (`server/analytics.js`):** audit flags, money trail, fair scorecards, next-rupee planner.
 - **Geo (`server/geo.js`):** point-in-polygon ward location.
-- **Translation (`server/translate.js`):** rule-based translation of Hindi, Marathi and Hinglish text (all 2,291 texts covered).
-- **Frontend:** Preact + htm with no build step; light theme; Reddit Sans.
-- **Deploy:** `render.yaml` (free plan). Zero build tooling means a judge can read and run it quickly.
+- **Translation (`server/translate.js`):** rule-based translation of Hindi, Marathi and Hinglish text.
+- **Frontend:** Preact + htm with no build step; light theme, sans-serif only. Zero build tooling means a judge can read and run it quickly.
 
-## 7. Data and honesty notes
+## 10. Data and honesty notes
 
 `/dataset` holds the synthetic **"Follow the Rupee: Mumbai Monsoon Roads"** dataset (CC BY 4.0, [source](https://github.com/SumeetGDoshi/Claude-Impact-Labs-data-2)): 24 BMC wards with polygons, 6,501 complaints, 2,499 work orders, 291 road segments, a rate card, 8 contractors, plus rainfall, tides, flood hotspots, traffic, accidents and facilities.
 
 - It is **not BMC data**. Office holders, parties and contractor staff in the app are fictional.
 - **Audit flags are prompts to check records, not proof of wrongdoing.**
 - Complaints become problem posts, with the category corrected from the linked work order (the citizen's own tag stays visible). Work orders become progress updates from the ward engineer. Social posts become normal posts.
-- Free-tier hosting resets user-created posts on restart; this is a prototype.
+- Sign-in uses a simulated DigiLocker screen. Do not enter real Aadhaar numbers.
+- Some notifications are demo content generated from seed data, and are labelled as such.
+- This is a prototype. Posts created on the live demo may reset when the server restarts.
 - The language picker is UI only for now; "Soon" buttons mark features that are planned but not built.
 
-## 8. Roadmap
+## 11. Roadmap
 
-Everything below is shown in the app as a non-functional **"Soon"** button and listed at `#/roadmap`.
+Planned features are shown in the app as a non-functional **"Soon"** button and listed at `#/roadmap`.
+
+**Designed, not built yet**
+- [ ] **Grouped problems**: merge about ten similar reports into one problem, with the report count as a severity signal for officials
+- [ ] **Own-area posting and upvoting**: citizens can read everywhere but post and upvote only in their own area
+- [ ] **AI responsibility routing**, replacing today's rule-based suggestion, with the reasoning shown to the poster
 
 **AI with Claude**
 - [ ] Plain-language summaries and a multilingual **"What happened to my complaint?"** assistant ("Ask Claude about this ward")
 - [ ] **AI accountability detection from photos**: point a camera at a problem and find who is responsible
 - [ ] **Tag-verification bot** and **content-policy bot** before posts publish
-- [ ] AI model routing for responsibility suggestions (replacing today's rule-based assignment)
+- [ ] **Official-post check**: AI verifies that officials post only official project updates (today the server limits them to progress updates linked to problems or projects)
 
 **Trust and identity**
 - [ ] Real **DigiLocker** sign-in with a verifiable privacy and no-leak guarantee
@@ -176,7 +234,7 @@ Everything below is shown in the app as a non-functional **"Soon"** button and l
 **Reach**
 - [ ] Push and SMS notifications
 - [ ] Full multi-language UI (Marathi and Hindi first, then all 22 scheduled languages)
-- [ ] Official GIS boundaries and live municipal data feeds
+- [ ] Official GIS boundaries, the full India region map, and live municipal data feeds
 - [ ] Expansion beyond roads (drains, water, garbage, lighting) and beyond Mumbai, including the rural Panchayati Raj track
 
 **Platform**
@@ -184,10 +242,10 @@ Everything below is shown in the app as a non-functional **"Soon"** button and l
 - [ ] Contractor-facing tools: respond to flags, upload completion proof
 - [ ] Open API and data exports for journalists, RTI activists and researchers
 
-## 9. The accountability hierarchy we model
+## 12. The accountability hierarchy we model
 
 India (PM) -> Maharashtra (CM, PWD, MMRDA) -> Konkan Division -> Greater Mumbai / BMC (Mayor, Commissioner, Chief Engineers; Collectors of Mumbai City and Mumbai Suburban) -> 7 zones (Deputy Municipal Commissioners) -> 24 wards (Assistant Commissioner, Executive Engineer Roads, Assistant Engineer Storm Water Drains, Corporator). The rural Panchayati Raj track is explained at `#/structure`.
 
-## 10. License
+## 13. License
 
-[MIT](LICENSE) © 2026 unwacko. Dataset: CC BY 4.0 (see section 7).
+[MIT](LICENSE) © 2026 unwacko. Dataset: CC BY 4.0 (see section 10).
