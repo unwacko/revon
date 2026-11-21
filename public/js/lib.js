@@ -1,7 +1,7 @@
 import { html, render, useState, useEffect, useRef, useMemo, useCallback } from '/vendor/htm/standalone.module.js';
 export { html, render, useState, useEffect, useRef, useMemo, useCallback };
 
-export const APP_NAME = 'Neta Connect';
+export const APP_NAME = 'Revon';
 
 // ---------------- Store ----------------
 const listeners = new Set();

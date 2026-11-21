@@ -1,6 +1,6 @@
-# Neta Connect (prototype)
+# Revon (prototype)
 
-**Every monsoon, Mumbai spends crores repairing the same roads.** Neta Connect connects citizens with everyone accountable for a road, from the ward engineer up to the Prime Minister. For every ward, road and contractor it answers three questions:
+**Every monsoon, Mumbai spends crores repairing the same roads.** Revon connects citizens with everyone accountable for a road, from the ward engineer up to the Prime Minister. For every ward, road and contractor it answers three questions:
 
 1. **Where did the money go?** Money trail by ward, zone and city: budget vs spend, by contractor, issue, method and month, plus audit flags.
 2. **Did the fix last?** Every complaint links to the work order that fixed it: cost vs the rate card, time target, and whether it re-opened within 30 days. Contractor scorecards compare each job with peers doing the same work in the same ward.
@@ -27,10 +27,10 @@ To use it on your phone (same Wi-Fi), open `http://<your-computer-ip>:3000`. Dem
 `/dataset` holds the synthetic **“Follow the Rupee: Mumbai Monsoon Roads”** dataset (CC BY 4.0, [source](https://github.com/SumeetGDoshi/Claude-Impact-Labs-data-2)). It contains 24 BMC wards with polygons, 6,501 complaints, 2,499 work orders, 291 road segments, a rate card, 8 contractors, plus rainfall, tides, flood hotspots, traffic, accidents and facilities. It is **not BMC data**. Office holders, parties and contractor staff in the app are fictional.
 
 How the data maps into the app:
-- Complaints → 🟡 problem posts. The category is corrected from the linked work order; the citizen's own tag is still shown.
-- Work orders → 🟣 progress updates from the ward engineer, with a repair record on each problem.
-- Social posts → ⚪ normal posts.
-- Everything is shown in English: the dataset's Hindi, Marathi and Hinglish texts are translated by rules in `server/translate.js` (all 2,291 covered), with the original one tap away.
+- Complaints → Yellow problem posts. The category is corrected from the linked work order; the citizen's own tag is still shown.
+- Work orders → Purple progress updates from the ward engineer, with a repair record on each problem.
+- Social posts → White normal posts.
+- Everything is shown in English: the dataset's Hindi, Marathi and Hinglish texts are translated by rules in `server/translate.js` (all 2,291 covered). Only the English text is stored and shown, with a small "Translated from …" note.
 - A language picker (22 scheduled languages, Marathi and Hindi first) is UI only for now.
 
 Audit flags:
@@ -46,7 +46,7 @@ Flags are prompts to check the records, not proof of wrongdoing.
 - Node + Express (`server/`), JSON-file persistence (`data/db.json`), live sync over Server-Sent Events.
 - `server/analytics.js`: audit flags, money trail, fair scorecards, next-rupee planner.
 - Preact + htm client with no build step (`public/js`), Leaflet with the dataset's ward polygons. Click a ward to zoom into it.
-- Layout follows Instagram: icon rail, two-pane settings, stories. Font is Reddit Sans; light theme by default.
+- Layout follows Instagram: icon rail, two-pane settings, stories. Font is Reddit Sans; light theme only (no dark mode).
 
 ## Hierarchy
 India (PM) → Maharashtra (CM, PWD, MMRDA) → Konkan Division → Greater Mumbai / BMC (Mayor, Commissioner, Chief Engineers; Collectors of Mumbai City and Mumbai Suburban) → 7 zones (Deputy Municipal Commissioners) → 24 wards (Assistant Commissioner, Executive Engineer Roads, Assistant Engineer Storm Water Drains, Corporator). The rural Panchayati Raj track is explained at `#/structure`.

@@ -6,7 +6,9 @@ import { Responsibles, Structure, RegionPage, PositionPage, ContractorPage, Proj
 import { Dashboard } from './pages/dashboard.js';
 import { Login, Onboarding, Notifications, Me, Settings, Roadmap, logout, switchView } from './pages/account.js';
 
-try { document.documentElement.dataset.theme = localStorage.getItem('theme') || 'light'; if (document.documentElement.dataset.theme === 'system') delete document.documentElement.dataset.theme; } catch { document.documentElement.dataset.theme = 'light'; }
+// Light theme only.
+document.documentElement.dataset.theme = 'light';
+try { localStorage.removeItem('theme'); } catch {}
 
 const NEEDS_AUTH = new Set(['new', 'notifications', 'me', 'settings', 'dashboard', 'onboarding']);
 
@@ -51,7 +53,7 @@ function Nav({ route }) {
   ];
   const canSwitch = s.meta?.me && (s.meta.me.positionIds.length || s.meta.me.contractorIds.length || s.meta.me.role === 'admin');
   return html`<nav class="nav" aria-label="Main">
-    <a class="nav-logo" href="#/"><span class="logo-full">Neta<span>Connect</span></span><span class="logo-mark">N</span></a>
+    <a class="nav-logo" href="#/"><span class="logo-full">Revon</span><span class="logo-mark">R</span></a>
     ${items.map(([k, href, icon, label]) => html`<a href=${href} class=${'nav-item' + (cur === k ? ' on' : '')} aria-label=${label}>
       <span class="nav-ic"><${Icon} n=${icon} s=${30} w=${cur === k ? 2.5 : 1.9} />${k === 'notifications' && s.unread ? html`<i class="dot-badge">${s.unread}</i>` : null}</span><span class="nav-l">${label}</span></a>`)}
     ${official ? html`<a href="#/responsibles" class=${'nav-item desktop-only' + (cur === 'responsibles' ? ' on' : '')} aria-label="Responsibles"><span class="nav-ic"><${Icon} n="users" s=${30} /></span><span class="nav-l">Responsibles</span></a>` : null}

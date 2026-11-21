@@ -71,10 +71,10 @@ export const Empty = ({ children }) => html`<div class="empty">${children}</div>
 export const ErrorBox = ({ error }) => html`<div class="empty error">${error}</div>`;
 
 const LANGUAGES = [
-  ['English', 'English'], ['मराठी', 'Marathi'], ['हिन्दी', 'Hindi'],
-  ['অসমীয়া', 'Assamese'], ['বাংলা', 'Bengali'], ['बड़ो', 'Bodo'], ['डोगरी', 'Dogri'], ['ગુજરાતી', 'Gujarati'], ['ಕನ್ನಡ', 'Kannada'],
-  ['کٲشُر', 'Kashmiri'], ['कोंकणी', 'Konkani'], ['मैथिली', 'Maithili'], ['മലയാളം', 'Malayalam'], ['মৈতৈলোন্', 'Manipuri'], ['नेपाली', 'Nepali'],
-  ['ଓଡ଼ିଆ', 'Odia'], ['ਪੰਜਾਬੀ', 'Punjabi'], ['संस्कृतम्', 'Sanskrit'], ['ᱥᱟᱱᱛᱟᱲᱤ', 'Santali'], ['سنڌي', 'Sindhi'], ['தமிழ்', 'Tamil'], ['తెలుగు', 'Telugu'], ['اردو', 'Urdu'],
+  'English', 'Marathi', 'Hindi',
+  'Assamese', 'Bengali', 'Bodo', 'Dogri', 'Gujarati', 'Kannada',
+  'Kashmiri', 'Konkani', 'Maithili', 'Malayalam', 'Manipuri', 'Nepali',
+  'Odia', 'Punjabi', 'Sanskrit', 'Santali', 'Sindhi', 'Tamil', 'Telugu', 'Urdu',
 ];
 // Language picker: UI only for now (all 22 scheduled languages; Marathi and Hindi first).
 export function LanguageButton() {
@@ -84,7 +84,7 @@ export function LanguageButton() {
     <button class="lang-btn" aria-label="Change language" aria-expanded=${open} onClick=${(e) => { e.stopPropagation(); setOpen(!open); }}><${Icon} n="globe" s=${22} /><span>EN</span><${Icon} n="down" s=${16} /></button>
     ${open ? html`<div class="lang-menu" role="menu" onClick=${(e) => e.stopPropagation()}>
       <div class="lang-h">Language</div>
-      ${LANGUAGES.map(([native, en], i) => html`${i === 3 ? html`<div class="lang-sep">All scheduled languages</div>` : null}<button role="menuitem" class=${'lang-item' + (i === 0 ? ' on' : '')} onClick=${() => { setOpen(false); if (i) toast(en + ' — coming soon'); }}><span>${native}</span>${native !== en ? html`<small>${en}</small>` : null}${i === 0 ? html`<${Icon} n="check" s=${18} />` : null}</button>`)}
+      ${LANGUAGES.map((en, i) => html`${i === 3 ? html`<div class="lang-sep">All scheduled languages</div>` : null}<button role="menuitem" class=${'lang-item' + (i === 0 ? ' on' : '')} onClick=${() => { setOpen(false); if (i) toast(en + ' — coming soon'); }}><span>${en}</span>${i === 0 ? html`<${Icon} n="check" s=${18} />` : null}</button>`)}
     </div>` : null}
   </div>`;
 }
@@ -124,7 +124,7 @@ export function AuthorLine({ author, regionId, regionName: rn, createdAt, reason
   return html`<div class="author">
     <a href=${a.href} class="author-av" onClick=${(e) => e.stopPropagation()}><${Avatar} name=${a.avatar || a.name} kind=${a.kind} size=${32} ring=${a.ring} /></a>
     <div class="author-meta">
-      <div class="author-name"><a href=${a.href} onClick=${(e) => e.stopPropagation()}>${a.name}</a>${a.verified ? html` <span class="verified" title="Verified">✓</span>` : null}<span class="dim"> • ${ago(createdAt)}</span></div>
+      <div class="author-name"><a href=${a.href} onClick=${(e) => e.stopPropagation()}>${a.name}</a>${a.verified ? html` <span class="verified" title="Verified"><${Icon} n="check" s=${12} w=${3} /></span>` : null}<span class="dim"> • ${ago(createdAt)}</span></div>
       <div class="author-sub">${a.sub ? html`${a.sub} · ` : null}<a href=${'#/region/' + regionId} onClick=${(e) => e.stopPropagation()}>${rn}</a>${source?.channel ? html` · via ${source.channel}` : null}${reasons?.length ? html` · <span class="reason">${reasons[0]}</span>` : null}</div>
     </div>
   </div>`;
@@ -144,10 +144,27 @@ export function RepairStrip({ wo }) {
   </a>`;
 }
 
-function Original({ p, full }) {
-  const [show, setShow] = useState(false);
-  return html`<div class="original"><span class="dim">Translated from ${p.originalLanguage}</span>${full ? html` · <button class="link-btn" onClick=${() => setShow(!show)}>${show ? 'Hide original' : 'Show original'}</button>` : null}${show ? html`<p class="orig-text">${p.bodyOriginal}</p>` : null}</div>`;
+// Image slot under every title. Real photos (uploaded in the app) fill it; otherwise an empty,
+// labelled 16:9 holder is shown. The dataset only has text descriptions of photos (its photo_url
+// values are placehold.co placeholders), so that description becomes the holder's caption.
+// To fill a holder later, add an image URL to the post's `images` array.
+export function PostMedia({ p, note = true }) {
+  const imgs = (p.images || []).filter(Boolean);
+  if (imgs.length) return html`<figure class="post-figure">
+    <div class=${'post-images n' + Math.min(imgs.length, 3)}>${imgs.slice(0, 3).map((src) => html`<img src=${src} alt=${p.photoNote || 'Photo attached to this post'} loading="lazy" />`)}</div>
+  </figure>`;
+  return html`<figure class="post-figure" data-image-slot=${p.id}>
+    <div class="media-holder" role="img" aria-label=${'Image placeholder' + (note && p.photoNote ? ': ' + p.photoNote : '')}>
+      <span class="ratio">16:9</span>
+      <${Icon} n="image" s=${28} w=${1.5} />
+      <b>${note && p.photoNote ? 'Photo not uploaded yet' : 'Image placeholder'}</b>
+      <span>${note && p.photoNote ? 'Citizen described it as: ' + p.photoNote : 'Space reserved for a photo'}</span>
+    </div>
+  </figure>`;
 }
+
+// Card order: author, headline, body, tag row, image, actions. Everything else (road, responsible
+// positions, repair record, linked problems, location) lives in the thread page's Details block.
 export function PostCard({ p, compact, full }) {
   const [up, setUp] = useState({ on: p.upvoted, n: p.upvoteCount });
   const [saved, setSaved] = useState(false);
@@ -161,25 +178,16 @@ export function PostCard({ p, compact, full }) {
   const open = () => go('#/post/' + p.id);
   const fmt = (n) => (n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K' : n);
   return html`<article class=${'post post-' + p.tag + (full ? ' full' : '')} onClick=${full ? undefined : (e) => { if (e.target.closest('a,button,input,label')) return; if (getSelection()?.toString()) return; open(); }}>
-    <h3 class="post-title">${p.title}</h3>
+    <div class="post-head"><${AuthorLine} ...${p} /></div>
+    ${full ? html`<h1 class="post-title">${p.title}</h1>` : html`<h3 class="post-title">${p.title}</h3>`}
     <p class=${'post-body' + (compact ? ' clamp' : '')}>${p.body}</p>
-    ${p.bodyOriginal ? html`<${Original} p=${p} full=${full} />` : null}
-    <div class="post-tags"><${TagPill} tag=${p.tag} />${p.category ? html`<span class="chip">${p.category}</span>` : null}<${StatusPill} status=${p.status} />${p.categoryReported && p.categoryReported !== p.category ? html`<span class="chip dim" title="Category picked by the citizen">tagged “${p.categoryReported}”</span>` : null}</div>
-    <div class="post-media">
-      <${AuthorLine} ...${p} />
-      ${p.images?.length ? html`<div class=${'post-images n' + Math.min(p.images.length, 3)}>${p.images.map((src) => html`<img src=${src} alt="Attached photo" loading="lazy" />`)}</div>` : null}
-      ${p.photoNote ? html`<div class="photo-note"><${Icon} n="image" s=${16} /> Photo: ${p.photoNote}</div>` : null}
-      ${p.road ? html`<a class="road-link" href=${'#/road/' + p.road.id} onClick=${(e) => e.stopPropagation()}><${Icon} n="road" s=${16} /> ${p.road.name} · segment ${p.road.segment}${p.road.underDlp ? html` <span class="flag">Under DLP</span>` : null}</a>` : null}
-      ${p.mentions?.length ? html`<div class="mentions">${p.mentions.map((m) => m.type === 'position' ? html`<a class="mention" href=${'#/position/' + m.id} onClick=${(e) => e.stopPropagation()}>@${position(m.id)?.title}</a>` : html`<a class="mention" href=${'#/contractor/' + m.id} onClick=${(e) => e.stopPropagation()}>@${contractor(m.id)?.name}</a>`)}</div>` : null}
-      ${p.linkedProblems?.length ? html`<div class="linked"><div class="linked-h">Update for ${p.linkedProblemCount > 1 ? p.linkedProblemCount + ' problems' : 'problem'}</div>${p.linkedProblems.slice(0, 3).map((x) => html`<a href=${'#/post/' + x.id} onClick=${(e) => e.stopPropagation()} class="linked-row"><span class="dot dot-problem"></span><span class="grow">${x.title}</span><${StatusPill} status=${x.status} /></a>`)}</div>` : null}
-      ${p.tag === 'problem' && p.responsible?.length ? html`<div class="responsible"><span class="dim">Responsible:</span> ${p.responsible.slice(0, 3).map((r) => html`<a href=${'#/position/' + r.positionId} onClick=${(e) => e.stopPropagation()} class="resp">${position(r.positionId)?.title}</a>`)}</div>` : null}
-      ${p.tag === 'problem' && p.workOrders?.length ? html`<${RepairStrip} wo=${p.workOrders[0]} />` : null}
-    </div>
+    <div class="post-tags"><${TagPill} tag=${p.tag} />${p.category ? html`<span class="chip">${p.category}</span>` : null}<${StatusPill} status=${p.status} /></div>
+    <${PostMedia} p=${p} note=${false} />
     <div class="actions">
-      <button class=${'act' + (up.on ? ' on' : '')} onClick=${vote} aria-label="Upvote"><${Icon} n="up" s=${30} fill=${up.on ? 'currentColor' : 'none'} /><span>${fmt(up.n)}</span></button>
-      <button class="act" onClick=${open} aria-label="Comments"><${Icon} n="comment" s=${30} /><span>${fmt(p.commentCount + (p.progressUpdates?.length || 0))}</span></button>
-      <button class="act" aria-label="Share" onClick=${(e) => { e.stopPropagation(); navigator.clipboard?.writeText(location.origin + '/#/post/' + p.id); toast('Link copied'); }}><${Icon} n="share" s=${30} /></button>
-      <button class=${'act save' + (saved ? ' on' : '')} aria-label="Save" onClick=${(e) => { e.stopPropagation(); setSaved(!saved); toast(saved ? 'Removed from saved' : 'Saved'); }}><${Icon} n="bookmark" s=${30} fill=${saved ? 'currentColor' : 'none'} /></button>
+      <button class=${'act' + (up.on ? ' on' : '')} onClick=${vote} aria-label="Upvote"><${Icon} n="up" s=${24} fill=${up.on ? 'currentColor' : 'none'} /><span>${fmt(up.n)}</span></button>
+      <button class="act" onClick=${open} aria-label="Comments"><${Icon} n="comment" s=${24} /><span>${fmt(p.commentCount + (p.progressUpdates?.length || 0))}</span></button>
+      <button class="act" aria-label="Share" onClick=${(e) => { e.stopPropagation(); navigator.clipboard?.writeText(location.origin + '/#/post/' + p.id); toast('Link copied'); }}><${Icon} n="share" s=${24} /></button>
+      <button class=${'act save' + (saved ? ' on' : '')} aria-label="Save" onClick=${(e) => { e.stopPropagation(); setSaved(!saved); toast(saved ? 'Removed from saved' : 'Saved'); }}><${Icon} n="bookmark" s=${24} fill=${saved ? 'currentColor' : 'none'} /></button>
     </div>
   </article>`;
 }
@@ -380,19 +388,32 @@ export function DemoBanner() {
 }
 
 // ---------------- Stories: pill of followed positions/contractors with unseen count ----------------
-import { api as _api, actingAs as _actingAs } from './lib.js';
+import { api as _api, actingAs as _actingAs, positionsIn as _positionsIn } from './lib.js';
+// Overlapping round avatars of the authorities behind a joint "solved" story.
+const JointFaces = ({ authors, size }) => html`<span class="joint-faces">${authors.map((a) => html`<${Avatar} name=${a.person || a.title} size=${size} />`)}</span>`;
 export function StoriesPill() {
   const [d, setD] = useState(null);
   const [open, setOpen] = useState(null);
   const load = () => _api('/stories').then(setD).catch(() => {});
   useEffect(() => { if (store.token) load(); }, [store.version, store.token]);
   if (!d?.groups.length) return null;
-  const faces = d.groups.slice(0, 2);
-  return html`<button class=${'story-pill' + (d.unseen ? '' : ' seen')} onClick=${() => setOpen(0)} aria-label=${`${d.unseen} new stories`}>
-      ${faces.map((g) => html`<${Avatar} name=${g.person || g.title} size=${54} />`)}
-      ${d.unseen ? html`<i class="story-count">${d.unseen}</i>` : null}
-    </button>
-    <div class="story-label">Stories</div>
+  const solo = d.groups.filter((g) => !g.joint), joint = d.groups.filter((g) => g.joint);
+  const faces = solo.slice(0, 2);
+  return html`<div class="story-slots">
+      ${solo.length ? html`<div class="story-slot-i">
+        <button class=${'story-pill' + (d.unseen ? '' : ' seen')} onClick=${() => setOpen(0)} aria-label=${`${d.unseen} new stories`}>
+          ${faces.map((g) => html`<${Avatar} name=${g.person || g.title} size=${54} />`)}
+          ${d.unseen ? html`<i class="story-count">${d.unseen}</i>` : null}
+        </button>
+        <div class="story-label">Stories</div>
+      </div>` : null}
+      ${joint.map((g) => html`<div class="story-slot-i" key=${g.key}>
+        <button class=${'story-pill joint-pill' + (g.items[0].seen ? ' seen' : '')} onClick=${() => setOpen(d.groups.indexOf(g))} aria-label=${`Solved: ${g.problem?.title || 'joint story'}, by ${g.authors.map((a) => a.title).join(', ')}`}>
+          <${JointFaces} authors=${g.authors} size=${g.authors.length > 2 ? 46 : 54} />
+        </button>
+        <div class="story-label joint-label"><${Icon} n="check" s=${14} w=${2.5} />Solved</div>
+      </div>`)}
+    </div>
     ${open != null ? html`<${StoryViewer} groups=${d.groups} start=${open} onClose=${() => { setOpen(null); load(); }} />` : null}`;
 }
 function StoryViewer({ groups, start, onClose }) {
@@ -400,10 +421,25 @@ function StoryViewer({ groups, start, onClose }) {
   const [ii, setIi] = useState(0);
   const g = groups[gi], it = g?.items[ii];
   useEffect(() => { if (it) post(`/stories/${it.id}/seen`).catch(() => {}); }, [it?.id]);
-  useEffect(() => { const t = setTimeout(next, 6000); return () => clearTimeout(t); }, [gi, ii]);
+  useEffect(() => { const t = setTimeout(next, g?.joint ? 10000 : 6000); return () => clearTimeout(t); }, [gi, ii]);
   function next() { if (ii + 1 < g.items.length) setIi(ii + 1); else if (gi + 1 < groups.length) { setGi(gi + 1); setIi(0); } else onClose(); }
   const prev = () => { if (ii > 0) setIi(ii - 1); else if (gi > 0) { setGi(gi - 1); setIi(0); } };
   if (!g) return null;
+  const leave = (e) => { e.stopPropagation(); onClose(); };
+  if (g.joint) return html`<div class="story-view joint-view" onClick=${(e) => (e.clientX < innerWidth / 3 ? prev() : next())}>
+    <div class="story-bars">${g.items.map((_, i) => html`<i class=${i < ii ? 'done' : i === ii ? 'run joint-run' : ''} key=${gi + '-' + i + '-' + ii}></i>`)}</div>
+    <div class="story-head joint-head">
+      <span class="joint-ring"><${JointFaces} authors=${g.authors} size=${40} /></span>
+      <div class="grow"><div class="joint-solved"><${Icon} n="check" s=${16} w=${2.5} />Solved</div><div class="joint-meta">Joint story · ${g.authors.length} authorities · ${ago(it.createdAt)}</div></div>
+      <button class="icon-btn" aria-label="Close" onClick=${leave}><${Icon} n="x" s=${30} /></button>
+    </div>
+    <div class="joint-body">
+      ${g.problem ? html`<div class="joint-problem">${g.problem.title}</div>` : null}
+      <p class="joint-text">${it.text}</p>
+      <ul class="joint-authors">${g.authors.map((a) => html`<li><a href=${'#/position/' + a.id} onClick=${leave}><${Avatar} name=${a.person || a.title} size=${32} /><span class="grow"><b>${a.title}</b><span>${a.person || 'Vacant'}</span></span></a></li>`)}</ul>
+      ${g.problem ? html`<a class="joint-link" href=${'#/post/' + g.problem.id} onClick=${leave}>View the problem <${Icon} n="chev" s=${16} /></a>` : null}
+    </div>
+  </div>`;
   const href = g.actor.type === 'position' ? '#/position/' + g.actor.id : '#/contractor/' + g.actor.id;
   return html`<div class="story-view" onClick=${(e) => (e.clientX < innerWidth / 3 ? prev() : next())}>
     <div class="story-bars">${g.items.map((_, i) => html`<i class=${i < ii ? 'done' : i === ii ? 'run' : ''} key=${gi + '-' + i + '-' + ii}></i>`)}</div>
@@ -417,6 +453,57 @@ export function NewStory() {
   if (a.type !== 'position' && a.type !== 'contractor') return null;
   const send = async (e) => { e.preventDefault(); try { await post('/stories', { actingAs: a, text }); setText(''); toast('Story posted for 24 hours'); } catch (err) { toast(err.message); } };
   return html`<form class="new-story" onSubmit=${send}><input value=${text} onInput=${(e) => setText(e.target.value)} placeholder="Post a story to your followers (24 h)…" maxlength="280" /><button class="btn btn-primary btn-sm" disabled=${text.trim().length < 5}>Share</button></form>`;
+}
+
+// ---------------- Joint solved story: 2–3 authorities announce one problem as solved ----------------
+export function JointStoryAction({ post: p }) {
+  const [open, setOpen] = useState(false);
+  return html`<button class="btn btn-sm joint-btn" onClick=${() => setOpen(true)}><${Icon} n="users" s=${16} />Publish joint solved story</button>
+    ${open ? html`<${JointStorySheet} post=${p} onClose=${() => setOpen(false)} />` : null}`;
+}
+export function JointStorySheet({ post: p, onClose }) {
+  const act = _actingAs();
+  const me = act.type === 'position' ? position(act.id) : null;
+  const [sel, setSel] = useState([]);
+  const [text, setText] = useState(`${p.title} is solved. `);
+  const [markResolved, setMarkResolved] = useState(p.status !== 'resolved');
+  const [busy, setBusy] = useState(false);
+  const resp = new Set((p.responsible || []).map((r) => r.positionId));
+  // Co-authority candidates: offices responsible for this problem first, then the nearest offices up the area chain.
+  const cands = chain(p.regionId).flatMap((r, d) => _positionsIn(r.id).map((x) => ({ x, d })))
+    .filter(({ x }) => x.id !== me?.id && x.holderUserId)
+    .sort((a, b) => (resp.has(b.x.id) - resp.has(a.x.id)) || a.d - b.d || a.x.rank - b.x.rank)
+    .slice(0, 10).map((o) => o.x);
+  const toggle = (id) => setSel((s) => (s.includes(id) ? s.filter((x) => x !== id) : s.length < 2 ? [...s, id] : s));
+  const publish = async () => {
+    setBusy(true);
+    try {
+      await post('/stories/joint', { actingPositionId: me.id, positionIds: [me.id, ...sel], problemPostId: p.id, text, markResolved });
+      toast('Joint solved story published');
+      onClose();
+    } catch (err) { toast(err.message); setBusy(false); }
+  };
+  const holder = (x) => person(x.holderUserId)?.name;
+  return html`<${Sheet} open title="Joint solved story" onClose=${onClose}>
+    <div class="joint-sheet">
+      ${!me ? html`<p class="joint-intro">Switch to your position to publish a joint story.</p>` : html`
+      <p class="joint-intro">One story from you and up to two other authorities who worked on this problem. The citizen who reported it, everyone who upvoted it and the followers of each authority will see it for a week.</p>
+      <div class="joint-sec">Problem</div>
+      <div class="joint-prob">${p.title}</div>
+      <div class="joint-sec">Authorities <span>${sel.length + 1} of 3</span></div>
+      <div class="joint-cand me"><${Avatar} name=${holder(me) || me.title} size=${32} /><div class="row-main"><div class="row-t">${me.title}</div><div class="row-s">${holder(me) || ''} · You</div></div></div>
+      ${cands.map((x) => { const on = sel.includes(x.id); return html`<button type="button" class=${'joint-cand' + (on ? ' on' : '')} aria-pressed=${on} disabled=${!on && sel.length >= 2} onClick=${() => toggle(x.id)}>
+        <${Avatar} name=${holder(x) || x.title} size=${32} />
+        <div class="row-main"><div class="row-t">${x.title}</div><div class="row-s">${holder(x)} · ${regionName(x.regionId)}${resp.has(x.id) ? ' · Responsible' : ''}</div></div>
+        <span class="joint-tick">${on ? html`<${Icon} n="check" s=${18} w=${2.5} />` : null}</span>
+      </button>`; })}
+      <label class="joint-sec" for="joint-text">What was done</label>
+      <textarea id="joint-text" rows="4" maxlength="400" value=${text} onInput=${(e) => setText(e.target.value)}></textarea>
+      <div class="joint-count">${text.length}/400</div>
+      ${p.status !== 'resolved' ? html`<label class="joint-check"><input type="checkbox" checked=${markResolved} onChange=${(e) => setMarkResolved(e.target.checked)} />Also mark this problem as resolved</label>` : null}
+      <button class="btn btn-primary btn-block" disabled=${busy || !sel.length || text.trim().length < 10} onClick=${publish}>${busy ? 'Publishing…' : sel.length ? `Publish with ${sel.length + 1} authorities` : 'Pick at least one co-authority'}</button>`}
+    </div>
+  </${Sheet}>`;
 }
 
 // ---------------- Budget: total, % allocation, click for charts ----------------

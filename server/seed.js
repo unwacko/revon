@@ -8,6 +8,10 @@ import { readCsv, km, inPolygon, ist } from './geo.js';
 import fs from 'node:fs';
 import { translate, setLocalityAliases, guessLang } from './translate.js';
 
+// Nothing in Devanagari script is written into the database: the CSVs are read and translated here.
+const DEVANAGARI = /[\u0900-\u097F]/;
+const english = (s, fallback) => (s && !DEVANAGARI.test(s) ? s : fallback);
+
 const DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'dataset');
 const csv = (f) => readCsv(path.join(DIR, f));
 
@@ -193,13 +197,13 @@ export function buildSeed() {
     const category = linked[0]?.workType || c.category_reported;
     const locName = englishPlace(c.locality_text) || loc?.locality || '';
     const where = road ? `${road.name}${locName ? ', ' + locName : ''}` : locName || 'Mumbai';
-    const english = translate(c.description);
+    const translated = translate(c.description);
     const regionId = code ? wardRegionId(code) : 'r_bmc';
     const uid = 'u_' + c.complainant_id;
     users.push({ id: uid, role: 'citizen', verified: true, onboarded: true, anonHandle: 'Citizen ' + c.complainant_id.slice(-5), regionId, following: { positions: [], users: [], regions: [] }, createdAt: ist(c.received_at) - 30 * 864e5 });
     posts.push({
       id: c.complaint_id, authorId: uid, actingAs: { type: 'citizen' }, tag: 'problem',
-      title: `${titleCat[category] || category} — ${where}`, body: english || c.description, bodyOriginal: english ? c.description : null, originalLanguage: english ? ({ 'hi-en': 'Hinglish', hi: 'Hindi', mr: 'Marathi' }[c.language] || 'Hindi') : null, photoNote: c.photo_description || null, images: [],
+      title: `${titleCat[category] || category} — ${where}`, body: english(translated || c.description, `${titleCat[category] || category} reported at ${where}.`), originalLanguage: translated ? ({ 'hi-en': 'Hinglish', hi: 'Hindi', mr: 'Marathi' }[c.language] || 'Hindi') : null, photoNote: c.photo_description || null, images: [],
       category, categoryReported: c.category_reported, regionId, roadId: road?.id || null, location: lat ? { lat, lng } : null,
       source: { type: 'complaint', channel: c.channel, language: c.language }, upvoteBase: +c.upvotes || 0, upvotes: [],
       status: statusMap[c.status] || 'open', statusDetail: c.status, resolvedAt: ist(c.resolved_at),
@@ -233,10 +237,10 @@ export function buildSeed() {
     const uid = 'u_s_' + s.author_handle.replace(/[^a-z0-9]/gi, '');
     if (!users.some((u) => u.id === uid)) users.push({ id: uid, role: 'citizen', verified: true, onboarded: true, anonHandle: 'Citizen ' + uid.slice(-5).toUpperCase(), regionId: loc ? wardRegionId(loc.ward_code) : 'r_bmc', following: { positions: [], users: [], regions: [] }, createdAt: ist(s.posted_at) - 30 * 864e5 });
     const englishText = translate(s.text);
-    const text = englishText || s.text;
+    const text = english(englishText || s.text, loc ? `Post about ${loc.locality}.` : 'Post from a Mumbai citizen.');
     const firstLine = text.split(/[.!?\n]/)[0].trim();
     posts.push({
-      id: s.post_id, authorId: uid, actingAs: { type: 'citizen' }, tag: 'normal', title: firstLine.length > 90 ? firstLine.slice(0, 87) + '…' : firstLine || 'Post', body: text, bodyOriginal: englishText ? s.text : null, originalLanguage: englishText ? ({ hi: 'Hindi', mr: 'Marathi', 'hi-en': 'Hinglish' }[guessLang(s.text)]) : null,
+      id: s.post_id, authorId: uid, actingAs: { type: 'citizen' }, tag: 'normal', title: firstLine.length > 90 ? firstLine.slice(0, 87) + '…' : firstLine || 'Post', body: text, originalLanguage: englishText ? ({ hi: 'Hindi', mr: 'Marathi', 'hi-en': 'Hinglish' }[guessLang(s.text)]) : null,
       source: { type: 'social', channel: s.source }, images: [], mentions: [], linkedProblemIds: [], workOrderIds: [], regionId: loc ? wardRegionId(loc.ward_code) : 'r_bmc', roadId: null,
       upvoteBase: Math.round((+s.likes_or_forwards || 0) / 10), upvotes: [], status: null, viewedByPositions: [], respondedByPositions: [], responsible: [], category: null, location: null, projectId: null,
       moderation: { botVerified: null }, createdAt: ist(s.posted_at),
@@ -267,7 +271,28 @@ export function buildSeed() {
   if (kwRoad) projects.push({ id: 'pj_1', title: `Post-monsoon mastic resurfacing — ${kwRoad.name} (segment ${kwRoad.segment})`, description: `Full-width mastic asphalt resurfacing of ${kwRoad.lengthM} m to stop repeat pothole patching on this stretch.`, category: 'Pothole', regionId: kwRoad.regionId, roadId: kwRoad.id, positionId: 'p_eer_kw', approvedByPositionId: 'p_amc_kw', approvedByUserId: P.p_amc_kw.holderUserId, contractorId: null, budget: 0.42, spent: 0, status: 'bidding', linkedProblemIds: openOn(kwRoad.id), bids: kwCons.slice(0, 3).map((c, i) => ({ contractorId: c.id, amount: [0.39, 0.36, 0.44][i], timelineDays: [21, 30, 18][i], note: ['Night work only', 'Includes 3-year defect liability', 'Fastest timeline'][i], at: now - (3 - i) * 864e5 })), startDate: null, endDate: null, createdAt: now - 5 * 864e5 });
   if (fsRoad) projects.push({ id: 'pj_2', title: `Hindmata area drain widening near ${fsRoad.name}`, description: 'Widen the storm-water drain and add a holding pump to cut waterlogging time at a chronic flood hotspot.', category: 'Waterlogging', regionId: fsRoad.regionId, roadId: fsRoad.id, positionId: 'p_swd_fs', approvedByPositionId: 'p_ce_swd', approvedByUserId: P.p_ce_swd.holderUserId, contractorId: contractors[3].id, budget: 1.8, spent: 0.55, status: 'in_progress', linkedProblemIds: openOn(fsRoad.id), bids: [{ contractorId: contractors[3].id, amount: 1.8, timelineDays: 120, note: '', at: now - 40 * 864e5 }], startDate: now - 20 * 864e5, endDate: null, createdAt: now - 45 * 864e5 });
 
-  const notifications = [{ id: 'n_1', userId: 'u_demo', type: 'progress', text: `Executive Engineer, Roads (K/W Ward) posted a progress update on "${demo.title}"`, link: '#/post/' + demo.workOrderIds[0], read: false, createdAt: workOrders.find((w) => w.id === demo.workOrderIds[0]).completedAt }];
+  // pj_3: an awarded K/W drain project. Three bids, the winner and the public reason for the choice.
+  const kwDrainRoad = (() => {
+    const counts = {};
+    for (const p of posts) if (p.tag === 'problem' && p.regionId === wardRegionId('K/W') && p.roadId && DRAIN_CATS.includes(p.category) && ['open', 'in_progress'].includes(p.status)) counts[p.roadId] = (counts[p.roadId] || 0) + 1;
+    return roadById[Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0]];
+  })();
+  if (kwDrainRoad) {
+    const linked = posts.filter((p) => p.tag === 'problem' && p.roadId === kwDrainRoad.id && DRAIN_CATS.includes(p.category) && ['open', 'in_progress'].includes(p.status)).map((p) => p.id);
+    for (const id of linked) postById[id].status = 'in_progress';
+    projects.push({
+      id: 'pj_3', title: `Drain desilting and manhole covers — ${kwDrainRoad.name} (segment ${kwDrainRoad.segment})`, description: `Desilt the roadside storm-water drain along ${kwDrainRoad.lengthM} m and replace broken manhole covers, so this stretch stops flooding after every heavy spell.`,
+      category: 'Waterlogging', regionId: kwDrainRoad.regionId, roadId: kwDrainRoad.id, positionId: 'p_swd_kw', approvedByPositionId: 'p_amc_kw', approvedByUserId: P.p_amc_kw.holderUserId,
+      contractorId: 'c_ct05', budget: 0.28, spent: 0.06, status: 'in_progress', linkedProblemIds: linked,
+      bids: [
+        { contractorId: 'c_ct06', amount: 0.26, timelineDays: 35, note: 'Silt disposal billed separately', at: now - 7 * 864e5 },
+        { contractorId: 'c_ct05', amount: 0.28, timelineDays: 24, note: 'Includes silt disposal and a 3-year defect liability', at: now - 6.5 * 864e5 },
+        { contractorId: 'c_ct08', amount: 0.31, timelineDays: 20, note: 'Two crews, night work', at: now - 6 * 864e5 },
+      ],
+      awardNote: 'Deccan Paving Solutions was chosen over the lowest bid because its price includes silt disposal and a 3-year defect liability; with disposal added, the lowest bid costs more. It is also already empanelled in K/W Ward.',
+      startDate: now - 3 * 864e5, endDate: null, createdAt: now - 8 * 864e5,
+    });
+  }
 
   // Stories: short-lived updates from positions/contractors (shown to followers)
   const t0 = Date.now();
@@ -283,5 +308,55 @@ export function buildSeed() {
   demoUser.following.positions.push('p_eer_kw');
   demoUser.contractorsFollowed = ['c_ct01'];
 
-  return { version: 2, stories, regions, positions, users, contractors, roads, workOrders, posts, comments: [], projects, notifications, sessions: {}, counters: { post: 0, comment: 0, user: 0, notif: 10, project: 10, position: 0, contractor: 10 } };
+  // ---------------- Joint "solved" stories ----------------
+  // Two or three authorities who worked on one problem publish a single story saying it is solved.
+  const kwResolved = (cat) => posts.filter((p) => p.tag === 'problem' && p.regionId === wardRegionId('K/W') && p.status === 'resolved' && p.category === cat && p.authorId !== 'u_demo').sort((a, b) => b.upvoteBase - a.upvoteBase)[0];
+  const caveIn = kwResolved('Road cave-in'), manhole = kwResolved('Open or broken manhole');
+  const roadOf = (p) => roadById[p.roadId]?.name || 'the ward road';
+  const placeOf = (p) => p.title.split(' — ')[1] || roadOf(p);
+  const joint = (id, problem, authorIds, text, h) => {
+    if (!problem) return;
+    for (const pid of authorIds) if (!problem.respondedByPositions.includes(pid)) problem.respondedByPositions.push(pid);
+    stories.push({ id, type: 'joint_solved', authors: authorIds.map((pid) => ({ type: 'position', id: pid })), problemPostId: problem.id, text, authorId: P[authorIds[0]].holderUserId, createdAt: t0 - h * 3600e3, seenBy: [] });
+  };
+  joint('js_1', caveIn, ['p_eer_kw', 'p_swd_kw', 'p_corp_kw'], `The cave-in on ${caveIn && placeOf(caveIn)} is fixed. Storm Water Drains replaced the leaking drain line that washed out the road base, Roads rebuilt the base and resurfaced the stretch, and the ward committee signed off the work on site.`, 3);
+  joint('js_2', manhole, ['p_swd_kw', 'p_eer_kw'], `The open manhole on ${manhole && placeOf(manhole)} now has a new cover and frame. Storm Water Drains fitted it, and Roads re-levelled the surface around it so two-wheelers do not hit an edge.`, 20);
+  if (caveIn && !caveIn.upvotes.includes('u_demo')) caveIn.upvotes.push('u_demo');
+
+  // A seeded official reply on the demo citizen's problem (the notification below points at it).
+  const comments = [{ id: 'cm_s1', postId: demo.id, authorId: P.p_eer_kw.holderUserId, actingAs: { type: 'position', id: 'p_eer_kw' }, body: `We have logged that the patch on ${roadOf(demo)} failed within 30 days. The repeat repair goes back to the same contractor, and we will post the result on this thread.`, createdAt: t0 - 1.2 * 864e5 }];
+
+  // ---------------- Demo notifications ----------------
+  // Every item is built from seed records (real post ids, positions, contractors, projects) and marked demo: true.
+  const ROAD = (p) => ROAD_CATS.includes(p.category), DRAIN = (p) => DRAIN_CATS.includes(p.category);
+  const sameFamily = (p) => posts.filter((x) => x.tag === 'problem' && x.roadId && x.roadId === p.roadId && (ROAD(p) ? ROAD(x) : DRAIN(x)));
+  const demoGroup = sameFamily(demo);
+  const demoWo = workOrders.find((w) => w.id === demo.workOrderIds[0]);
+  const lakh = (cr) => `₹${Math.round(cr * 100)} lakh`;
+  const pj1 = projects.find((x) => x.id === 'pj_1'), pj3 = projects.find((x) => x.id === 'pj_3');
+  const winBid = pj3?.bids.find((b) => b.contractorId === pj3.contractorId);
+  const conNameOf = (id) => contractors.find((c) => c.id === id)?.name;
+  const swdUpdate = posts.filter((p) => p.tag === 'progress' && p.actingAs.id === 'p_swd_kw').sort((a, b) => b.createdAt - a.createdAt)[0];
+  const newKwPothole = posts.filter((p) => p.tag === 'problem' && p.regionId === wardRegionId('K/W') && p.status === 'open' && ROAD(p)).sort((a, b) => b.createdAt - a.createdAt)[0];
+  const T = (P_) => P[P_].title;
+  const notifications = [];
+  const note = (userId, type, actor, text, link, daysAgo, read) => notifications.push({ id: 'n_' + (notifications.length + 1), userId, type, actor, text: actor ? `${actor} ${text}` : text, link, read, demo: true, createdAt: t0 - daysAgo * 864e5 });
+
+  note('u_demo', 'comment', T('p_eer_kw'), `replied to your problem "${demo.title}"`, '#/post/' + demo.id, 0.05, false);
+  if (caveIn) note('u_demo', 'joint_solved', T('p_eer_kw'), `and 2 other authorities published a joint story: "${caveIn.title}" is solved`, '#/post/' + caveIn.id, 0.12, false);
+  if (pj3) note('u_demo', 'contractor', T('p_swd_kw'), `chose ${conNameOf(pj3.contractorId)} for "${pj3.title}" at ${lakh(winBid.amount)}, out of ${pj3.bids.length} bids`, '#/project/pj_3', 0.4, false);
+  if (caveIn) note('u_demo', 'resolved', T('p_eer_kw'), `marked "${caveIn.title}", which you upvoted, as resolved`, '#/post/' + caveIn.id, 0.9, true);
+  if (swdUpdate) note('u_demo', 'progress', T('p_swd_kw'), `posted a progress update: "${swdUpdate.title}"`, '#/post/' + swdUpdate.id, 1.6, false);
+  note('u_demo', 'grouped', null, `Your problem "${demo.title}" was grouped with ${demoGroup.length - 1} other reports on ${roadOf(demo)} (segment ${roadById[demo.roadId]?.segment}). The group size shows officials how serious it is.`, '#/post/' + demo.id, 2.5, true);
+  if (pj1) note('u_demo', 'project', T('p_eer_kw'), `opened "${pj1.title}" for bids. It covers ${pj1.linkedProblemIds.length} open problems in K/W Ward`, '#/project/pj_1', 4.2, true);
+  if (pj3) note('u_demo', 'project', T('p_swd_kw'), `created a project for ${pj3.linkedProblemIds.length} waterlogging problems in your ward: "${pj3.title}"`, '#/project/pj_3', 7.5, true);
+  if (demoWo?.reopened) note('u_demo', 'reopened', null, `The repair on your problem "${demo.title}" by ${conNameOf(demoWo.contractorId)} failed within 30 days, so the complaint was re-opened`, '#/wo/' + demoWo.id, 8.3, true);
+  note('u_demo', 'progress', T('p_eer_kw'), `posted a progress update on "${demo.title}"`, '#/post/' + demo.workOrderIds[0], 9.6, true);
+
+  if (manhole) note('u_eer_kw', 'joint_solved', T('p_swd_kw'), `published a joint solved story with you on "${manhole.title}"`, '#/post/' + manhole.id, 0.8, false);
+  if (pj1?.bids[0]) note('u_eer_kw', 'contractor', conNameOf(pj1.bids[0].contractorId), `placed a bid of ${lakh(pj1.bids[0].amount)} on "${pj1.title}"`, '#/project/pj_1', 2.1, false);
+  if (newKwPothole) note('u_eer_kw', 'problem', null, `New problem in your area: "${newKwPothole.title}"`, '#/post/' + newKwPothole.id, 3.4, true);
+  note('u_eer_kw', 'follow', 'A citizen', `started following ${T('p_eer_kw')}`, '#/position/p_eer_kw', 6, true);
+
+  return { version: 2, stories, regions, positions, users, contractors, roads, workOrders, posts, comments, projects, notifications, sessions: {}, counters: { post: 0, comment: 0, user: 0, notif: 100, project: 10, position: 0, contractor: 10 } };
 }

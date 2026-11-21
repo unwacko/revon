@@ -1,0 +1,82 @@
+/* thread — owned by the thread feature. Uses tokens from /styles.css only.
+   Post card (feed + thread), Details ledger, Reddit-style comment tree. Flat: no borders, no shadows. */
+
+/* ---------- Post card: author, headline, body, tags, image, actions ---------- */
+.post .post-head { margin-bottom: var(--s3); }
+.post .post-title { margin: 0 0 var(--s1); }
+.post .post-body { margin: 0 0 var(--s3); }
+.post .post-tags { margin: 0 0 var(--s3); }
+.post .post-figure { margin: 0 0 var(--s2); }
+.post .tag-normal { background: var(--normal); color: var(--normal-ink); }
+
+/* ---------- Thread page ---------- */
+.thread { padding: var(--s2) var(--s4) var(--s7); display: flex; flex-direction: column; }
+.thread .post.full { padding: var(--s4) var(--s4) var(--s2); }
+.thread .post.full .post-title { font-size: var(--t-2xl); line-height: var(--lh-2xl); margin-bottom: var(--s2); }
+.thread .post.full .post-body { color: var(--text); }
+.thread .card { margin: var(--s4) 0 0; }
+
+/* Details: clerical label/value rows, zebra tint, tabular numbers */
+.details { margin-top: var(--s5); }
+.details-h { font-size: var(--t-lg); line-height: var(--lh-lg); font-weight: 600; margin: 0 0 var(--s2); color: var(--text); }
+.details-sub { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s3); font-size: var(--t-sm); line-height: var(--lh-sm); font-weight: 600; color: var(--text); margin: var(--s4) 0 var(--s2); }
+.details-sub a { font-weight: 500; color: var(--link); font-size: var(--t-xs); line-height: var(--lh-xs); }
+.dt { margin: 0; font-size: var(--t-sm); line-height: var(--lh-sm); font-variant-numeric: tabular-nums; }
+.dt-row { display: grid; grid-template-columns: minmax(96px, 38%) 1fr; gap: var(--s3); padding: var(--s2) var(--s3); border-radius: var(--r1); }
+.dt-row:nth-child(odd) { background: var(--raised); }
+.dt dt { color: var(--muted); }
+.dt dd { margin: 0; text-align: right; color: var(--text); min-width: 0; overflow-wrap: anywhere; }
+.dt dd a { color: var(--link); }
+.dt dd a:hover { text-decoration: underline; }
+.dt-line { display: block; }
+.dt-line + .dt-line { margin-top: var(--s1); }
+.dt-sub { display: block; color: var(--muted); font-size: var(--t-xs); line-height: var(--lh-xs); }
+.dt .num { font-variant-numeric: tabular-nums; }
+
+/* ---------- Comment thread ---------- */
+.thread-comments { margin-top: var(--s6); }
+.thread-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); margin-bottom: var(--s3); }
+.thread-count { margin: 0; font-size: var(--t-lg); line-height: var(--lh-lg); font-weight: 600; color: var(--text); }
+.thread-count .num { font-variant-numeric: tabular-nums; }
+.thread-sort { display: inline-flex; gap: var(--s1); background: var(--raised); padding: var(--s1); border-radius: var(--r2); }
+.thread-sort button { min-height: 32px; padding: 0 var(--s3); border-radius: var(--r1); font-size: var(--t-sm); line-height: var(--lh-sm); font-weight: 600; color: var(--muted); }
+.thread-sort button:hover { color: var(--text); }
+.thread-sort button.on { background: var(--raised2); color: var(--text); }
+.thread-signin { display: block; padding: var(--s3) var(--s4); background: var(--raised); border-radius: var(--r1); color: var(--link); font-size: var(--t-sm); line-height: var(--lh-sm); font-weight: 600; }
+.thread-back { display: inline-flex; align-items: center; gap: var(--s1); min-height: 40px; margin-top: var(--s3); color: var(--link); font-size: var(--t-sm); line-height: var(--lh-sm); font-weight: 600; }
+.thread-empty { color: var(--muted); font-size: var(--t-sm); line-height: var(--lh-sm); margin: var(--s5) 0; }
+
+/* Composer (top) and inline reply box */
+.reply-box { display: flex; flex-direction: column; gap: var(--s2); }
+.reply-box textarea { resize: vertical; min-height: 48px; font-size: var(--t-md); line-height: var(--lh-md); }
+.reply-box.reply-top:not(.open) textarea { resize: none; }
+.reply-box:not(.reply-top) { margin-top: var(--s2); }
+.reply-actions { display: flex; justify-content: flex-end; gap: var(--s2); }
+
+/* Comment node: gutter (avatar + rail) | main (self + replies) */
+.cm-list { margin-top: var(--s2); }
+.cm { display: flex; gap: var(--s2); margin-top: var(--s4); }
+.cm-children > .cm { margin-top: var(--s3); }
+.cm-gutter { flex: none; width: 24px; display: flex; flex-direction: column; align-items: center; }
+.cm-av { display: block; line-height: 0; }
+.cm-rail { flex: 1; width: 24px; display: flex; justify-content: center; padding: var(--s2) 0 0; }
+.cm-rail i { display: block; width: 2px; height: 100%; border-radius: var(--r1); background: color-mix(in srgb, var(--muted) 22%, transparent); }
+.cm-rail:hover i, .cm-rail:focus-visible i { background: var(--muted); }
+.cm-main { flex: 1; min-width: 0; }
+.cm-self { border-radius: var(--r2); }
+.cm-official > .cm-main > .cm-self { background: none; }
+.cm-head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s1) var(--s2); min-height: 24px; font-size: var(--t-sm); line-height: var(--lh-sm); }
+.cm-name { font-weight: 600; color: var(--text); }
+.cm-name:hover { text-decoration: underline; }
+.cm-role { font-size: var(--t-xs); line-height: var(--lh-xs); font-weight: 600; padding: 0 var(--s1); border-radius: var(--r1); background: var(--progress); color: var(--progress-ink); }
+.cm-sub, .cm-time { color: var(--muted); font-size: var(--t-xs); line-height: var(--lh-xs); }
+.cm-time { font-variant-numeric: tabular-nums; }
+.cm-expand { color: var(--link); font-size: var(--t-xs); line-height: var(--lh-xs); font-weight: 600; }
+.cm-body { margin: var(--s1) 0 0; font-size: var(--t-md); line-height: var(--lh-md); color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; text-wrap: pretty; }
+.cm-actions { display: flex; align-items: center; gap: var(--s1); margin: var(--s1) 0 0 calc(-1 * var(--s2)); }
+.cm-act { display: inline-flex; align-items: center; gap: var(--s1); min-height: 40px; padding: 0 var(--s2); border-radius: var(--r1); font-size: var(--t-xs); line-height: var(--lh-xs); font-weight: 600; color: var(--muted); }
+.cm-act:hover { background: var(--raised2); color: var(--text); }
+.cm-act.on { color: var(--text); }
+.cm-act .num { font-variant-numeric: tabular-nums; }
+.cm-continue { display: inline-flex; align-items: center; gap: var(--s1); min-height: 40px; margin-top: var(--s1); color: var(--link); font-size: var(--t-sm); line-height: var(--lh-sm); font-weight: 600; }
+.cm.collapsed .cm-head { opacity: .8; }

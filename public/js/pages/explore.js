@@ -1,4 +1,4 @@
-import { html, useState, setMode, store, useStore, api, post, useData, go, toast, region, position, contractor, project, person, children, chain, positionsIn, levelLabel, inr, rs, pct, ago, fmtNum, fmtDate, M, STATUS, regionName } from '../lib.js';
+import { html, useState, useEffect, setMode, store, useStore, api, post, useData, go, toast, region, position, contractor, project, person, children, chain, positionsIn, levelLabel, inr, rs, pct, ago, fmtNum, fmtDate, M, STATUS, regionName } from '../lib.js';
 import { Header, Icon, Avatar, Tabs, PostCard, PositionRow, ContractorRow, ProjectRow, RegionRow, WorkOrderRow, Breadcrumb, BudgetBars, AreaMap, FollowButton, Loading, Empty, ErrorBox, StatusPill, Party, Sheet, ComingSoon, MoneyPanel, PlannerPanel, ScorecardPanel, Kpis, BudgetPanel, LanguageButton } from '../components.js';
 
 // ---------------- Responsibles (was Explore) ----------------
@@ -37,7 +37,7 @@ export function Responsibles() {
       </section>` : null}
       <section class="card pad">
         <div class="sec-h"><b>Who is responsible — India to your ward</b><a class="link" href="#/structure">How it works ›</a></div>
-        <p class="dim small">Area → positions → people. Tap ▸ to expand. "Higher" and "lower" are relative to where you are.</p>
+        <p class="dim small">Area → positions → people. Tap the arrow to expand. "Higher" and "lower" are relative to where you are.</p>
         <${TreeNode} id="r_in" open depth=${0} />
       </section>
       <section class="card pad"><div class="sec-h"><b>Contractors</b><a class="link" href="#/scorecards">Scorecards ›</a></div>${M().contractors.map((c) => html`<${ContractorRow} c=${c} />`)}</section>
@@ -53,7 +53,7 @@ function TreeNode({ id, open: initial, depth }) {
   const holder = head && person(head.holderUserId);
   return html`<div class="tree-node" style=${`--d:${depth}`}>
     <div class="tree-row">
-      <button class="tree-toggle" aria-label=${open ? 'Collapse' : 'Expand'} disabled=${!kids.length} onClick=${() => setOpen(!open)}>${kids.length ? (open ? '▾' : '▸') : '•'}</button>
+      <button class="tree-toggle" aria-label=${open ? 'Collapse' : 'Expand'} disabled=${!kids.length} onClick=${() => setOpen(!open)}>${kids.length ? html`<${Icon} n=${open ? 'down' : 'chev'} s=${16} />` : '•'}</button>
       <a href=${'#/region/' + id} class="tree-main">
         <div class="tree-t">${r.name} <span class="lvl">${levelLabel(r.type)}</span></div>
         ${head ? html`<div class="tree-s">${head.title}: ${holder?.name || 'Vacant'} ${holder?.party ? html`<${Party} party=${holder.party} />` : null} · ${positionsIn(id).length} positions</div>` : null}
@@ -85,50 +85,146 @@ export function Structure() {
 }
 
 // ---------------- Area page ----------------
+// Order: who this area is -> who is responsible -> where it sits -> money -> records -> map (last).
+const CIVIC = new Set(['municipal_corporation', 'zone', 'ward']); // levels covered by the monsoon-roads dataset
+const NO_MAP = new Set(['nation', 'state', 'division']); // no boundary data above the city
+const RECORD_TABS = ['money', 'plan', 'problems', 'projects', 'roads'];
+const SECTION_TABS = ['positions', 'areas', 'budget'];
+
+const headOf = (rid) => positionsIn(rid).find((p) => p.isHead);
+const wardIdsUnder = (rid) => { const r = region(rid); if (!r) return []; if (r.type === 'ward') return [rid]; return children(rid).flatMap((k) => wardIdsUnder(k.id)); };
+function sumWards(rid) { return wardIdsUnder(rid).reduce((a, w) => a + Object.values(region(w).budget || {}).reduce((x, y) => x + y, 0), 0); }
+
+// Open problems per ward, read from each ward head's stats (the ward head is routed every ward problem).
+let openCache = null;
+function openByWard() {
+  if (openCache && Date.now() - openCache.at < 15000) return openCache.p;
+  const heads = M().positions.filter((p) => p.isHead && region(p.regionId)?.type === 'ward');
+  const p = Promise.all(heads.map((h) => api(`/positions/${h.id}/stats`).then((st) => [h.regionId, st.open], () => [h.regionId, 0]))).then(Object.fromEntries);
+  openCache = { at: Date.now(), p };
+  return p;
+}
+const openIn = (counts, rid) => { if (!counts) return null; const ws = wardIdsUnder(rid); return ws.length ? ws.reduce((a, w) => a + (counts[w] || 0), 0) : null; };
+
 export function RegionPage({ id, query = {} }) {
   const s = useStore();
   const r = region(id);
-  const [tab, setTab] = useState(query.tab || (r?.type === 'ward' || r?.type === 'zone' || r?.id === 'r_bmc' ? 'money' : 'positions'));
+  const civic = !!r && CIVIC.has(r.type);
+  const [tab, setTab] = useState(RECORD_TABS.includes(query.tab) ? query.tab : civic ? 'money' : 'problems');
   const [addOpen, setAddOpen] = useState(false);
-  const hasWards = r && (r.type === 'ward' || r.type === 'zone' || r.id === 'r_bmc' || ['r_in', 'r_mh', 'r_konkan'].includes(r.id));
-  const money = useData(() => (hasWards && tab === 'money' ? api('/money/' + id) : Promise.resolve(null)), [id, tab]);
-  const plan = useData(() => (hasWards && tab === 'plan' ? api('/planner/' + id) : Promise.resolve(null)), [id, tab]);
-  const posts = useData(() => (tab === 'problems' ? api(`/posts?region=${id}&subtree=1&tag=problem&status=open&limit=40`) : Promise.resolve([])), [id, tab]);
+  const [mapOpen, setMapOpen] = useState(true);
+  const money = useData(() => (civic && tab === 'money' ? api('/money/' + id) : Promise.resolve(null)), [id, tab]);
+  const plan = useData(() => (civic && tab === 'plan' ? api('/planner/' + id) : Promise.resolve(null)), [id, tab]);
+  const posts = useData(() => (tab === 'problems' ? api(`/posts?region=${id}&subtree=1&tag=problem&status=open&limit=12`) : Promise.resolve([])), [id, tab]);
+  const open = useData(() => openByWard(), []);
+  useEffect(() => {
+    const target = SECTION_TABS.includes(query.tab) ? 'area-' + query.tab : RECORD_TABS.includes(query.tab) ? 'area-records' : null;
+    if (!target) return;
+    const t = setTimeout(() => document.getElementById(target)?.scrollIntoView({ block: 'start' }), 60);
+    return () => clearTimeout(t);
+  }, [id, query.tab]);
   if (!r) return html`<${Header} title="Area" back /><${ErrorBox} error="Area not found" />`;
+
   const ps = positionsIn(id);
   const head = ps.find((p) => p.isHead);
   const kids = children(id);
+  const up = chain(id).reverse();
   const me = s.meta.me;
   const canEdit = me && (me.role === 'admin' || (head && head.holderUserId === me.id));
   const projects = M().projects.filter((pj) => chain(pj.regionId).some((c) => c.id === id));
   const roads = r.type === 'ward' ? M().roads.filter((x) => x.regionId === id) : [];
-  return html`
-    <${Header} title=${r.shortName || r.name} sub=${levelLabel(r.type)} back right=${html`<${FollowButton} type="region" id=${id} small />`} />
-    <${Breadcrumb} regionId=${id} />
-    <${AreaMap} regions=${[r, ...kids]} height=${260} roads=${roads.map((x) => ({ ...x, label: `${x.name} · seg ${x.segment}`, href: '#/road/' + x.id, color: x.underDlp ? '#22c55e' : '#f97316' }))} />
-    <div class="dim small pad-x">Tap an area on the map to zoom in. ${roads.length ? 'Orange = ward roads, green = under Defect Liability Period.' : ''}</div>
-    <div class="stats">
-      <div><b>${fmtNum(r.population)}</b><span>people</span></div>
-      <div><b>${ps.length}</b><span>positions</span></div>
-      <div><b>${kids.length || roads.length}</b><span>${kids.length ? 'sub-areas' : 'road segments'}</span></div>
-      <div><b>${inr(Object.values(r.budget).reduce((a, b) => a + b, 0))}</b><span>budget</span></div>
-    </div>
-    ${r.note ? html`<div class="dim small pad-x">${r.note}</div>` : null}
-    ${r.lowLying != null ? html`<div class="dim small pad-x">Flood index ${r.lowLying} · ${r.crews} engineering crews/day · ${r.localities.join(', ')}</div>` : null}
-    ${head ? html`<section class="card pad head-card"><div class="dim small">Fixed head position — can edit this area's positions</div><${PositionRow} p=${head} /></section>` : null}
-    <${Tabs} value=${tab} onChange=${setTab} tabs=${[...(hasWards ? [['money', 'Money'], ['plan', 'Next rupee']] : []), ['budget', 'Budget'], ['positions', 'Positions'], ['problems', 'Open problems'], ['projects', 'Projects'], ...(kids.length ? [['areas', 'Sub-areas']] : []), ...(roads.length ? [['roads', 'Roads']] : [])]} />
-    ${tab === 'money' ? (money.loading ? html`<${Loading} />` : html`<${MoneyPanel} m=${money.data} regionId=${id} />`) : null}
-    ${tab === 'plan' ? (plan.loading ? html`<${Loading} />` : html`<${PlannerPanel} data=${plan.data} />`) : null}
-    ${tab === 'positions' ? html`<section class="list">
-      ${ps.map((p) => html`<div class="pos-block"><${PositionRow} p=${p} /><div class="resp-list">${p.responsibilities.slice(0, 3).map((x) => html`<span>${x}</span>`)}</div></div>`)}
-      ${canEdit ? html`<button class="btn btn-ghost btn-block" onClick=${() => setAddOpen(true)}>+ Add position to this area</button>` : null}
-    </section>` : null}
-    ${tab === 'budget' ? html`<${AreaBudget} r=${r} kids=${kids} ps=${ps} />` : null}
-    ${tab === 'problems' ? (posts.loading ? html`<${Loading} />` : posts.data.length ? html`<div class="feed">${posts.data.map((p) => html`<${PostCard} p=${p} compact />`)}</div>` : html`<${Empty}>No open problems here.</${Empty}>`) : null}
-    ${tab === 'projects' ? html`<section class="list">${projects.length ? projects.map((pj) => html`<${ProjectRow} pj=${pj} />`) : html`<${Empty}>No projects yet.</${Empty}>`}</section>` : null}
-    ${tab === 'areas' ? html`<section class="list">${kids.map((k) => html`<${RegionRow} r=${k} right=${html`<span class="dim small">${positionsIn(k.id).length} positions</span>`} />`)}</section>` : null}
-    ${tab === 'roads' ? html`<section class="list">${roads.map((x) => html`<a class="row" href=${'#/road/' + x.id}><div class="region-ic"><${Icon} n="road" s=${22} /></div><div class="row-main"><div class="row-t">${x.name} · segment ${x.segment}</div><div class="row-s">${x.underDlp ? html`<span class="ok">Under DLP</span>` : 'Out of DLP'}</div></div><${Icon} n="chev" /></a>`)}</section>` : null}
-    <${AddPositionSheet} open=${addOpen} onClose=${() => setAddOpen(false)} regionId=${id} />`;
+  const short = r.shortName || r.name;
+  const openHere = openIn(open.data, id);
+  const tabs = [...(civic ? [['money', 'Money trail'], ['plan', 'Next rupee']] : []), ['problems', 'Open problems'], ['projects', 'Projects'], ...(roads.length ? [['roads', 'Roads']] : [])];
+
+  return html`<div class="area">
+    <${Header} title=${levelLabel(r.type)} back right=${html`<${FollowButton} type="region" id=${id} small />`} />
+
+    <section class="area-head">
+      ${up.length > 1 ? html`<nav class="area-trail" aria-label="Area trail">${up.slice(0, -1).map((c, i) => html`${i ? html`<span aria-hidden="true">›</span>` : null}<a href=${'#/region/' + c.id}>${c.shortName || c.name}</a>`)}</nav>` : null}
+      <h1 class="area-name">${r.name}</h1>
+      <div class="area-meta">
+        <span>${levelLabel(r.type)}</span>
+        ${r.population ? html`<span>${fmtNum(r.population)} people</span>` : null}
+        <span>${ps.length} ${ps.length === 1 ? 'position' : 'positions'}</span>
+        ${openHere != null ? html`<span>${fmtNum(openHere)} open problems</span>` : null}
+      </div>
+      ${r.localities?.length ? html`<p class="area-note">Covers ${r.localities.join(', ')}.</p>` : null}
+      ${r.note ? html`<p class="area-note">${r.note}</p>` : null}
+    </section>
+
+    <section class="area-sec" id="area-positions">
+      <h2 class="area-h">Who is responsible here</h2>
+      <p class="area-sub">${ps.length ? `Positions at ${short}, head position first.` : `No positions are listed at ${short} yet.`}</p>
+      ${ps.length ? html`<div class="ledger">${ps.map((p) => html`<${PositionLine} p=${p} />`)}</div>` : null}
+      ${canEdit ? html`<button class="area-add" onClick=${() => setAddOpen(true)}><${Icon} n="plus" s=${18} /> Add a position to this area</button>` : null}
+    </section>
+
+    <section class="area-sec" id="area-areas">
+      <h2 class="area-h">Hierarchy</h2>
+      <p class="area-sub">The chain of areas above ${short}, each with its head position.</p>
+      <ol class="chain">
+        ${up.map((c, i) => { const h = headOf(c.id); const hp = h && person(h.holderUserId); return html`<li class=${c.id === id ? 'on' : ''} style=${`--i:${i}`}>
+          <a href=${'#/region/' + c.id} aria-current=${c.id === id ? 'page' : null}>
+            <span class="chain-lvl">${levelLabel(c.type)}</span>
+            <span class="chain-name">${c.shortName || c.name}</span>
+            <span class="chain-head">${h ? html`${h.title} · <b>${hp?.name || 'Vacant'}</b>` : 'No head position listed'}</span>
+          </a></li>`; })}
+      </ol>
+      ${kids.length ? html`
+        <h3 class="area-h3">Areas under ${short}</h3>
+        <table class="ledger-table">
+          <thead><tr><th scope="col">Area</th><th scope="col">Head</th><th scope="col" class="num">Open problems</th><th scope="col"><span class="sr">Open</span></th></tr></thead>
+          <tbody>${kids.map((k) => { const h = headOf(k.id); const hp = h && person(h.holderUserId); const n = openIn(open.data, k.id); return html`<tr class="link-row" onClick=${() => go('#/region/' + k.id)}>
+            <td><a href=${'#/region/' + k.id} onClick=${(e) => e.stopPropagation()}>${k.shortName || k.name}</a><div class="cell-sub">${levelLabel(k.type)}</div></td>
+            <td>${hp?.name || (h ? 'Vacant' : '—')}${h ? html`<div class="cell-sub">${h.title}</div>` : null}</td>
+            <td class="num">${n == null ? '—' : fmtNum(n)}</td>
+            <td class="chev"><${Icon} n="chev" s=${16} /></td>
+          </tr>`; })}</tbody>
+        </table>` : html`<p class="area-sub">${short} is the smallest area. Its problems go to the positions listed above.</p>`}
+    </section>
+
+    <${AreaBudget} r=${r} kids=${kids} civic=${civic} />
+
+    <section class="area-sec" id="area-records">
+      <h2 class="area-h">Records</h2>
+      <div class="area-links">
+        ${civic ? html`<a href=${'#/audit/' + id}>Audit flags ›</a><a href="#/scorecards">Contractor scorecards ›</a>` : html`<a href="#/region/r_bmc?tab=money">Mumbai monsoon money trail ›</a><a href="#/structure">How India is divided ›</a>`}
+      </div>
+      <${Tabs} value=${tab} onChange=${setTab} tabs=${tabs} />
+      <div class="area-tab">
+        ${tab === 'money' ? (money.loading ? html`<${Loading} />` : html`<${MoneyPanel} m=${money.data} regionId=${id} />`) : null}
+        ${tab === 'plan' ? (plan.loading ? html`<${Loading} />` : html`<${PlannerPanel} data=${plan.data} />`) : null}
+        ${tab === 'problems' ? (posts.loading ? html`<${Loading} />` : posts.data.length ? html`<div class="feed">${posts.data.map((p) => html`<${PostCard} p=${p} compact />`)}</div>` : html`<${Empty}>No open problems here.</${Empty}>`) : null}
+        ${tab === 'projects' ? html`<section class="list">${projects.length ? projects.map((pj) => html`<${ProjectRow} pj=${pj} />`) : html`<${Empty}>No projects yet.</${Empty}>`}</section>` : null}
+        ${tab === 'roads' ? html`<table class="ledger-table">
+          <thead><tr><th scope="col">Road segment</th><th scope="col" class="num">Defect liability</th><th scope="col"><span class="sr">Open</span></th></tr></thead>
+          <tbody>${roads.map((x) => html`<tr class="link-row" onClick=${() => go('#/road/' + x.id)}><td><a href=${'#/road/' + x.id} onClick=${(e) => e.stopPropagation()}>${x.name}</a><div class="cell-sub">Segment ${x.segment}</div></td><td class="num">${x.underDlp ? html`<span class="ok">Active</span>` : 'Expired'}</td><td class="chev"><${Icon} n="chev" s=${16} /></td></tr>`)}</tbody>
+        </table>` : null}
+      </div>
+    </section>
+
+    <section class="area-sec area-map">
+      ${NO_MAP.has(r.type) ? html`<h2 class="area-h">Map</h2><p class="area-sub">Boundaries are mapped only for Mumbai's 24 wards so far. A map for ${short} is planned.</p>` : html`
+        <button class="area-toggle" aria-expanded=${mapOpen} onClick=${() => setMapOpen(!mapOpen)}><h2 class="area-h">Map</h2><${Icon} n=${mapOpen ? 'down' : 'chev'} s=${18} /></button>
+        ${mapOpen ? html`<${AreaMap} regions=${[r, ...kids]} height=${220} roads=${roads.map((x) => ({ ...x, label: `${x.name} · seg ${x.segment}`, href: '#/road/' + x.id, color: x.underDlp ? '#22c55e' : '#f97316' }))} />
+          <p class="area-sub">Ward boundaries are approximate. Tap an area to zoom in.${roads.length ? ' Orange: ward roads. Green: still under defect liability.' : ''}</p>` : null}`}
+    </section>
+    <${AddPositionSheet} open=${addOpen} onClose=${() => setAddOpen(false)} regionId=${id} />
+  </div>`;
+}
+
+function PositionLine({ p }) {
+  const holder = person(p.holderUserId);
+  return html`<div class="ledger-row pos-line">
+    <${Avatar} name=${holder?.name || p.title} size=${32} />
+    <a class="pos-main" href=${'#/position/' + p.id}>
+      <span class="pos-title">${p.title}${p.isHead ? html` <span class="area-tag">Head</span>` : null}</span>
+      <span class="pos-holder">${holder ? holder.name : html`<i>Vacant</i>`}${holder?.party ? html` <span class="area-party">${holder.party}</span>` : null}</span>
+      ${p.responsibilities?.[0] ? html`<span class="pos-resp">${p.responsibilities[0]}</span>` : null}
+    </a>
+    <${FollowButton} type="position" id=${p.id} small />
+  </div>`;
 }
 
 function AddPositionSheet({ open, onClose, regionId }) {
@@ -149,22 +245,30 @@ function AddPositionSheet({ open, onClose, regionId }) {
   </form></${Sheet}>`;
 }
 
-function wardBudget(r) { return Object.values(r.budget || {}).reduce((a, b) => a + b, 0); }
-function sumWards(id) { const r = region(id); if (r.type === 'ward') return wardBudget(r); return children(id).reduce((a, k) => a + sumWards(k.id), 0); }
-function AreaBudget({ r, kids, ps }) {
-  const own = Object.entries(r.budget || {});
+function LedgerMoney({ rows, total, label = 'Category' }) {
+  const max = Math.max(...rows.map((e) => e[1]));
+  const share = (v) => { const x = (v / total) * 100; return (x < 10 ? x.toFixed(1) : x.toFixed(0)) + '%'; };
+  return html`<table class="ledger-table money">
+    <thead><tr><th scope="col">${label}</th><th scope="col" class="num">Amount</th><th scope="col" class="num">Share</th></tr></thead>
+    <tbody>${rows.map(([k, v]) => html`<tr><td>${k}<span class="ledger-bar" aria-hidden="true"><i style=${`width:${Math.max(1, (v / max) * 100)}%`}></i></span></td><td class="num">${inr(v)}</td><td class="num">${share(v)}</td></tr>`)}</tbody>
+    ${rows.length > 1 ? html`<tfoot><tr><td>Total</td><td class="num">${inr(total)}</td><td class="num">100%</td></tr></tfoot>` : null}
+  </table>`;
+}
+
+function AreaBudget({ r, kids, civic }) {
+  const own = Object.entries(r.budget || {}).filter((e) => e[1] > 0).sort((a, b) => b[1] - a[1]);
   const total = own.reduce((a, e) => a + e[1], 0);
   const parent = r.parentId && region(r.parentId);
-  const parentTotal = parent ? Object.values(parent.budget || {}).reduce((a, b) => a + b, 0) : 0;
-  const money = useData(() => (r.type !== 'nation' && r.type !== 'state' ? api('/money/' + r.id) : Promise.resolve(null)), [r.id]);
-  const m = money.data && !money.data.none ? money.data : null;
-  return html`
-    <${BudgetPanel} title="Budget by category" entries=${own} context=${parent && parentTotal ? `${((total / parentTotal) * 100).toFixed(1)}% of ${parent.shortName || parent.name}'s ${inr(parentTotal)}` : null}
-      detail=${() => m ? html`<div class="sec-h"><b>Spent vs budget</b></div><div class="budget-l"><span>${rs(m.spend)} spent of ${rs(m.budget)}</span><b class=${m.spend > m.budget ? 'bad' : ''}>${pct(m.spend / (m.budget || 1))}</b></div><div class=${'bar' + (m.spend > m.budget ? ' over' : '')}><i style=${`width:${Math.min(100, (m.spend / (m.budget || 1)) * 100)}%`}></i></div>` : null} />
-    ${kids.length && kids.some((k) => sumWards(k.id) > 0) ? html`<${BudgetPanel} title="Allocation to sub-areas" entries=${kids.map((k) => [k.shortName || k.name, sumWards(k.id)])} />` : null}
-    ${ps.some((p) => p.budget) ? html`<${BudgetPanel} title="Allocation by position" entries=${ps.map((p) => [p.title, p.budget])} />` : null}
-    ${m ? html`<${BudgetPanel} title="Actual spend by issue" entries=${m.byWorkType} money=${rs} context=${`${rs(m.spend)} spent on ${m.jobs} jobs`} />
-      <${BudgetPanel} title="Actual spend by contractor" entries=${m.byContractor} money=${rs} />` : null}`;
+  const parentTotal = civic && parent && CIVIC.has(parent.type) ? sumWards(parent.id) : 0;
+  const split = kids.map((k) => [k.shortName || k.name, sumWards(k.id)]).filter((e) => e[1] > 0).sort((a, b) => b[1] - a[1]);
+  const short = r.shortName || r.name;
+  return html`<section class="area-sec" id="area-budget">
+    <h2 class="area-h">Budget by category</h2>
+    ${own.length ? html`
+      <p class="area-sub">${civic ? 'Monsoon road repair budget, June to September 2025.' : 'Indicative yearly figures, not an official budget statement.'}${parentTotal ? ` ${((total / parentTotal) * 100).toFixed(1)}% of ${parent.shortName || parent.name}'s ${inr(parentTotal)}.` : ''}</p>
+      <${LedgerMoney} rows=${own} total=${total} />` : html`<p class="area-sub">No budget is recorded for ${short}.</p>`}
+    ${split.length > 1 ? html`<h3 class="area-h3">Split across areas under ${short}</h3><${LedgerMoney} label="Area" rows=${split} total=${split.reduce((a, e) => a + e[1], 0)} />` : null}
+  </section>`;
 }
 
 // ---------------- Road ----------------
@@ -268,7 +372,7 @@ export function PositionPage({ id }) {
           <div><b>${st?.problems ? pct(st.responded / st.problems) : '—'}</b><span>responded</span></div>
         </div>
       </div>
-      <div class="profile-name">${holder ? html`<a href=${'#/person/' + holder.id}>${holder.name}</a> <span class="verified">✓</span>` : html`<i>Vacant position</i>`}</div>
+      <div class="profile-name">${holder ? html`<a href=${'#/person/' + holder.id}>${holder.name}</a> <span class="verified" title="Verified"><${Icon} n="check" s=${12} w=${3} /></span>` : html`<i>Vacant position</i>`}</div>
       <div class="profile-sub">${p.title} · <a href=${'#/region/' + p.regionId}>${regionName(p.regionId)}</a> ${p.isHead ? html`<span class="head-badge">Area head</span>` : null}</div>
       ${holder?.party ? html`<div class="profile-sub"><${Party} party=${holder.party} /> · ${p.kind}</div>` : html`<div class="profile-sub dim">${p.kind}</div>`}
       <div class="btn-row">${mine ? html`<a class="btn btn-primary grow" href="#/dashboard" onClick=${() => setMode('position:' + id)}>Open dashboard</a>` : html`<${FollowButton} type="position" id=${id} />`}<a class="btn btn-ghost" href="#/new?tag=problem">Report problem</a></div>

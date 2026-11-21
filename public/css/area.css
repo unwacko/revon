@@ -1,0 +1,93 @@
+/* area — owned by the area feature. Uses tokens from /styles.css only.
+   Flat: no borders, no shadows. Grouping by spacing and tints; data as zebra ledger rows. */
+
+.area { font-family: var(--sans); }
+.area .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* ---- Header ---- */
+.area-head { padding: var(--s4) var(--s4) var(--s2); }
+.area-trail { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s2); font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--muted); margin-bottom: var(--s2); }
+.area-trail a { color: var(--muted); }
+.area-trail a:hover { color: var(--link); text-decoration: underline; }
+.area-name { margin: 0; font-size: var(--t-2xl); line-height: var(--lh-2xl); font-weight: 600; color: var(--text); letter-spacing: -0.01em; }
+.area-meta { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s3); margin-top: var(--s2); font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--text2); font-variant-numeric: tabular-nums; }
+.area-meta span + span::before { content: "·"; margin-right: var(--s3); color: var(--muted); }
+.area-note { margin: var(--s2) 0 0; font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--muted); max-width: 60ch; }
+
+/* ---- Sections ---- */
+.area-sec { padding: var(--s5) var(--s4) 0; }
+.area-h { margin: 0; font-size: var(--t-lg); line-height: var(--lh-lg); font-weight: 600; color: var(--text); }
+.area-h3 { margin: var(--s5) 0 var(--s2); font-size: var(--t-md); line-height: var(--lh-md); font-weight: 600; color: var(--text); }
+.area-sub { margin: var(--s1) 0 var(--s3); font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--muted); }
+
+/* ---- Ledger rows (positions) ---- */
+.ledger { display: flex; flex-direction: column; }
+.ledger-row { display: flex; align-items: center; gap: var(--s3); padding: var(--s3); border-radius: var(--r1); }
+.ledger-row:nth-child(odd) { background: var(--raised); }
+.pos-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pos-main:hover .pos-title { color: var(--link); }
+.pos-title { font-size: var(--t-sm); line-height: var(--lh-sm); font-weight: 600; color: var(--text); }
+.pos-holder { font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--text2); display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s2); }
+.pos-resp { font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.area-tag { font-size: var(--t-xs); line-height: var(--lh-xs); font-weight: 600; color: var(--text2); background: var(--raised2); padding: 0 var(--s1); border-radius: var(--r1); margin-left: var(--s1); }
+.area-party { font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--muted); }
+.area-add { display: flex; align-items: center; gap: var(--s2); width: 100%; margin-top: var(--s2); padding: var(--s3); border-radius: var(--r1); background: var(--raised2); color: var(--text); font-size: var(--t-sm); font-weight: 600; }
+.area-add:hover { background: var(--raised); }
+
+/* Buttons inside the area page: flat tints, no outlines */
+.area .btn-ghost { border-color: transparent; background: var(--raised2); }
+.area .btn-ghost:hover { background: var(--raised); }
+.area .btn-soon { border: 0; background: var(--raised2); }
+
+/* ---- Hierarchy chain ---- */
+.chain { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.chain a { display: grid; grid-template-columns: 1fr auto; column-gap: var(--s3); padding: var(--s2) var(--s3); padding-left: calc(var(--s3) + var(--i, 0) * var(--s3)); border-radius: var(--r1); }
+.chain a:hover { background: var(--raised); }
+.chain-lvl { grid-column: 1 / -1; font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--muted); }
+.chain-name { font-size: var(--t-sm); line-height: var(--lh-sm); font-weight: 600; color: var(--text); }
+.chain-head { grid-column: 1 / -1; font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--text2); }
+.chain-head b { font-weight: 600; }
+.chain li.on a { background: var(--raised2); }
+
+/* ---- Ledger tables ---- */
+.ledger-table { width: 100%; border-collapse: collapse; font-size: var(--t-sm); line-height: var(--lh-sm); font-variant-numeric: tabular-nums; }
+.ledger-table th { text-align: left; font-size: var(--t-xs); line-height: var(--lh-xs); font-weight: 500; color: var(--muted); padding: var(--s2) var(--s3); }
+.ledger-table td { padding: var(--s2) var(--s3); vertical-align: top; color: var(--text); }
+.ledger-table tbody tr:nth-child(odd) td { background: var(--raised); }
+.ledger-table td:first-child { border-radius: var(--r1) 0 0 var(--r1); }
+.ledger-table td:last-child { border-radius: 0 var(--r1) var(--r1) 0; }
+.ledger-table .num { text-align: right; white-space: nowrap; }
+.ledger-table .chev { width: var(--s5); color: var(--muted); vertical-align: middle; padding-left: 0; }
+.ledger-table td a { font-weight: 600; }
+.ledger-table .cell-sub { font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--muted); }
+.ledger-table tr.link-row { cursor: pointer; }
+.ledger-table tr.link-row:hover td { background: var(--raised2); }
+.ledger-table tr.link-row:hover a { color: var(--link); }
+.ledger-table tfoot td { font-weight: 600; padding-top: var(--s3); }
+.ledger-table .ok { color: var(--ok); }
+
+/* Thin flat bar under each money row */
+.ledger-bar { display: block; height: var(--s1); margin-top: var(--s1); background: var(--raised2); border-radius: var(--r1); overflow: hidden; }
+.ledger-bar i { display: block; height: 100%; background: var(--text2); }
+
+/* ---- Records ---- */
+.area-links { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s4); margin: var(--s2) 0 var(--s3); font-size: var(--t-sm); line-height: var(--lh-sm); }
+.area-links a { color: var(--link); font-weight: 500; }
+.area-links a:hover { text-decoration: underline; }
+.area .tabs { border-bottom: 0; gap: var(--s1); margin: 0 calc(-1 * var(--s4)); padding: var(--s1) var(--s4); }
+.area .tabs button { flex: none; border-bottom: 0; border-radius: var(--r1); padding: var(--s2) var(--s3); font-size: var(--t-sm); line-height: var(--lh-sm); }
+.area .tabs button.on { background: var(--raised2); color: var(--text); }
+.area-tab { margin: var(--s2) calc(-1 * var(--s4)) 0; }
+.area-tab > .ledger-table { margin: 0 var(--s4); width: calc(100% - 2 * var(--s4)); }
+.area-tab .card { border: 0; background: var(--raised); border-radius: var(--r2); }
+
+/* ---- Map (last, small, collapsible) ---- */
+.area-map { padding-bottom: var(--s5); }
+.area-toggle { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: var(--s2) 0; text-align: left; }
+.area-toggle .ic { color: var(--muted); }
+.area .map { width: 100%; margin: var(--s2) 0 0; border: 0; border-radius: var(--r2); }
+
+@media (max-width: 420px) {
+  .area-name { font-size: var(--t-xl); line-height: var(--lh-xl); }
+  .ledger-table th, .ledger-table td { padding-left: var(--s2); padding-right: var(--s2); }
+}

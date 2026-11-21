@@ -13,7 +13,7 @@ const DATA_DIR = process.env.DATA_DIR || path.join(ROOT, 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
 const PORT = Number(process.env.PORT || 3000);
-const SEED_VERSION = 5;
+const SEED_VERSION = 6;
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
@@ -253,6 +253,112 @@ function rankFor(viewer, p) {
   return { score: hot(p) * prox * followBoost * typeWeight(p), reasons };
 }
 
+// ---------------- Comments: payload + demo threads ----------------
+const commentUps = (c) => (c.upvoteBase || 0) + (c.upvotes?.length || 0);
+const commentOut = (c, viewer) => ({
+  ...c, parentId: c.parentId || null, author: actorLabel(c.actingAs, c.authorId),
+  upvoteCount: commentUps(c), upvoted: viewer ? (c.upvotes || []).includes(viewer.id) : false, upvotes: undefined, upvoteBase: undefined,
+});
+
+// Demo comment threads, added once at startup so thread pages are not empty (marked demo: true).
+// o = official (the post's responsible position at index o), otherwise a citizen from the post's ward.
+const DEMO_THREADS = [
+  [
+    { t: 'This has been getting worse since the first heavy spell. A two-wheeler went in last night near {road}; the rider was lucky.', u: 142, r: [
+      { o: 1, t: 'Site inspected this morning. There is a damaged storm-water line under it, so a surface patch will not hold. Barricades are up; the line gets repaired first, then the road.', u: 88, r: [
+        { t: 'Thanks. Can you share a date? The barricades already fell over once in the rain.', u: 41, r: [
+          { o: 1, t: 'Target is within 7 working days, weather permitting. The ward team will re-fix the barricades with sandbags today.', u: 37 },
+        ] },
+      ] },
+      { t: 'The same stretch was resurfaced in May. Who did that work, and is it still under defect liability?', u: 64 },
+    ] },
+    { t: 'Buses are diverting through the side lane now, and that lane floods too. Please look at both.', u: 23 },
+  ],
+  [
+    { t: 'Water fills it completely after 20 minutes of rain, so you cannot see how deep it is. Lost a tyre here on Tuesday.', u: 96, r: [
+      { t: 'Same. It is right at the lane merge, so cars swerve at the last second.', u: 31, r: [
+        { t: 'Reported it on the old complaint line twice. Closed both times as resolved without any work.', u: 27 },
+      ] },
+    ] },
+    { t: 'Is this stretch with the ward or with MMRDA? Every complaint gets passed between them.', u: 52, r: [
+      { o: 0, t: 'This segment is maintained by the ward. The complaint is assigned to our roads engineer and will be logged against a work order once it is filled.', u: 45 },
+    ] },
+  ],
+  [
+    { t: 'Cold mix was dumped here two weeks ago and it washed out after one night of rain.', u: 77, r: [
+      { t: 'Cold mix in the middle of the monsoon never lasts. This spot needs mastic asphalt.', u: 40, r: [
+        { t: 'Mastic costs more per square metre, but paying for cold mix three times costs more.', u: 22 },
+      ] },
+    ] },
+    { t: 'School buses use {road} every morning. Please prioritise this one.', u: 34 },
+  ],
+  [
+    { t: 'There are four of these between the signal and the bus stop. Upvoting so it moves up the list.', u: 58, r: [
+      { o: 1, t: 'Noted. These are listed for the next patching round in the ward. A progress update with photos will follow once the work is done.', u: 49, r: [
+        { t: 'Please post the before photos too, so we can check the same spots were fixed.', u: 26 },
+      ] },
+    ] },
+  ],
+  [
+    { t: 'It gets wider every day. Shopkeepers put a crate in it as a warning.', u: 61, r: [
+      { t: 'Passed by this morning. The crate is gone and it is just open now.', u: 19 },
+    ] },
+    { t: 'For whoever reads this at the ward office: there is a gas pipeline marker right next to it.', u: 44 },
+  ],
+  [
+    { t: 'This junction floods first every year and the road breaks right after. Fix the drainage, not just the surface.', u: 83, r: [
+      { o: 0, t: 'Agreed that drainage is the root cause here. Desilting of the drain at this junction is being checked with the Storm Water Drains team.', u: 51, r: [
+        { t: 'Please put the desilting dates on the project page so people can follow it.', u: 29 },
+      ] },
+    ] },
+  ],
+  [
+    { t: 'Auto drivers refuse to take {road} after dark because of this.', u: 38 },
+    { t: 'The street lights are also off on this stretch, which makes it worse.', u: 21 },
+  ],
+  [
+    { t: 'Second complaint about this road this week. The grouped count shows how bad it is.', u: 17 },
+  ],
+];
+const DEMO_COMMENTS_V = 2;
+function seedDemoComments() {
+  // Idempotent: runs once per DB (and again only if the templates' version changes). Only demo
+  // comments are ever replaced; seed.js comments and real user comments are left alone.
+  if (db.demoCommentsV === DEMO_COMMENTS_V && db.comments.some((c) => c.demo)) return;
+  db.comments = db.comments.filter((c) => !c.demo);
+  db.demoCommentsV = DEMO_COMMENTS_V;
+  const demo = USER('u_demo');
+  if (!demo) return;
+  const top = db.posts.filter((p) => p.tag === 'problem' && !HIDDEN.has(p.status))
+    .map((p) => ({ p, s: rankFor(demo, p).score })).sort((a, b) => b.s - a.s).slice(0, DEMO_THREADS.length).map((x) => x.p);
+  const busy = new Set([...ix.held.keys(), ...ix.memberOf.keys(), 'u_demo']);
+  const citizens = db.users.filter((u) => u.role === 'citizen' && !busy.has(u.id));
+  top.forEach((p, i) => {
+    const local = citizens.filter((u) => u.regionId === p.regionId);
+    const pool = local.length >= 6 ? local : citizens;
+    let ci = i * 7;
+    const road = (p.title.split(' — ')[1] || 'this road').trim();
+    let at = p.createdAt;
+    const walk = (nodes, parentId) => nodes.forEach((n) => {
+      at = Math.min(at + (1 + (n.t.length % 5)) * 3600e3, Date.now() - 60e3);
+      const pos = n.o != null ? POS(p.responsible[n.o]?.positionId || p.responsible[0]?.positionId) : null;
+      const official = pos?.holderUserId ? pos : null;
+      const authorId = official ? official.holderUserId : pool[ci++ % pool.length].id;
+      const c = { id: nextId('comment', 'cm'), postId: p.id, parentId, authorId, actingAs: official ? { type: 'position', id: official.id } : { type: 'citizen' },
+        body: n.t.replace('{road}', road), upvoteBase: n.u || 0, upvotes: [], createdAt: at, demo: true };
+      db.comments.push(c);
+      if (official) { if (!p.respondedByPositions.includes(official.id)) p.respondedByPositions.push(official.id); if (!p.viewedByPositions.includes(official.id)) p.viewedByPositions.push(official.id); }
+      if (n.r) walk(n.r, c.id);
+    });
+    walk(DEMO_THREADS[i], null);
+  });
+  ix.commentCount = new Map();
+  for (const c of db.comments) ix.commentCount.set(c.postId, (ix.commentCount.get(c.postId) || 0) + 1);
+  save();
+  console.log(`Added ${db.comments.filter((c) => c.demo).length} demo comments`);
+}
+seedDemoComments();
+
 // ---------------- App ----------------
 const app = express();
 app.use(express.json({ limit: '12mb' }));
@@ -371,7 +477,7 @@ app.get('/api/posts/:id', (req, res) => {
   const viewer = getUser(req);
   const p = POST(req.params.id);
   if (!p) return res.status(404).json({ error: 'Post not found' });
-  const comments = db.comments.filter((c) => c.postId === p.id).sort((a, b) => a.createdAt - b.createdAt).map((c) => ({ ...c, author: actorLabel(c.actingAs, c.authorId) }));
+  const comments = db.comments.filter((c) => c.postId === p.id).sort((a, b) => a.createdAt - b.createdAt).map((c) => commentOut(c, viewer));
   const project = db.projects.find((pj) => pj.id === p.projectId || pj.linkedProblemIds.includes(p.id)) || null;
   const workOrders = (p.workOrderIds || []).map(WO).filter(Boolean).map((w) => ({ ...woBrief(w), flagDetails: w.flags, twinId: w.twinId }));
   res.json({ post: decorate(p, viewer), comments, project, workOrders });
@@ -403,7 +509,7 @@ app.post('/api/posts', auth, (req, res) => {
   if (b.tag === 'problem') {
     const chosen = (b.responsiblePositionIds || []).filter((id) => POS(id));
     const suggested = suggestResponsible(regionId, b.category || 'Other');
-    responsible = (chosen.length ? chosen : suggested).map((positionId) => ({ positionId, assignedBy: suggested.includes(positionId) ? 'rules' : 'user' }));
+    responsible = (chosen.length ? chosen : suggested).map((positionId) => ({ positionId, assignedBy: ['user', 'rules'].includes(b.responsibleAssignedBy) ? b.responsibleAssignedBy : suggested.includes(positionId) ? 'rules' : 'user' }));
   }
   const road = ROAD(b.roadId);
   const p = {
@@ -411,7 +517,7 @@ app.post('/api/posts', auth, (req, res) => {
     images: (b.images || []).slice(0, 4), mentions: (b.mentions || []).filter((m) => (m.type === 'position' && POS(m.id)) || (m.type === 'contractor' && CON(m.id))),
     linkedProblemIds: linked, workOrderIds: [], upvoteBase: 0, upvotes: [], status: b.tag === 'problem' ? 'open' : null, viewedByPositions: [], respondedByPositions: [],
     responsible, category: b.tag === 'problem' ? (b.category || 'Other') : null, location: b.location || null, regionId, roadId: road ? road.id : null,
-    projectId: PROJ(b.projectId) ? b.projectId : null, capturedWithCamera: !!b.capturedWithCamera, source: { type: 'app', channel: 'Neta Connect' },
+    projectId: PROJ(b.projectId) ? b.projectId : null, capturedWithCamera: !!b.capturedWithCamera, source: { type: 'app', channel: 'Revon' },
     moderation: { botVerified: null }, createdAt: Date.now(),
   };
   add('posts', p);
@@ -454,7 +560,10 @@ app.post('/api/posts/:id/comments', auth, (req, res) => {
   const body = String(req.body?.body || '').trim();
   if (!body) return res.status(400).json({ error: 'Empty comment' });
   if (!canRespond(req.user, actingAs, p)) return res.status(403).json({ error: 'You can only respond on behalf of a position or contractor to posts you are responsible for' });
-  const c = { id: nextId('comment', 'cm'), postId: p.id, authorId: req.user.id, actingAs, body: body.slice(0, 2000), createdAt: Date.now() };
+  const parentId = req.body?.parentId || null;
+  const parent = parentId ? db.comments.find((x) => x.id === parentId) : null;
+  if (parentId && (!parent || parent.postId !== p.id)) return res.status(400).json({ error: 'The comment you are replying to is not on this post' });
+  const c = { id: nextId('comment', 'cm'), postId: p.id, parentId, authorId: req.user.id, actingAs, body: body.slice(0, 2000), upvotes: [], createdAt: Date.now() };
   db.comments.push(c);
   ix.commentCount.set(p.id, (ix.commentCount.get(p.id) || 0) + 1);
   if (actingAs.type === 'position') {
@@ -463,8 +572,19 @@ app.post('/api/posts/:id/comments', auth, (req, res) => {
     if (p.status === 'open') p.status = 'acknowledged';
   }
   if (p.authorId !== req.user.id) notify([p.authorId], `${actorLabel(actingAs, req.user.id).title} commented on "${p.title}"`, `#/post/${p.id}`, 'comment');
+  if (parent && parent.authorId !== req.user.id && parent.authorId !== p.authorId) notify([parent.authorId], `${actorLabel(actingAs, req.user.id).title} replied to your comment on "${p.title}"`, `#/post/${p.id}`, 'comment');
   changed('posts', p.id);
-  res.json({ ...c, author: actorLabel(actingAs, req.user.id) });
+  res.json(commentOut(c, req.user));
+});
+
+app.post('/api/comments/:id/upvote', auth, (req, res) => {
+  const c = db.comments.find((x) => x.id === req.params.id);
+  if (!c) return res.status(404).json({ error: 'Not found' });
+  const ups = (c.upvotes ||= []);
+  const i = ups.indexOf(req.user.id);
+  if (i >= 0) ups.splice(i, 1); else ups.push(req.user.id);
+  changed('posts', c.postId);
+  res.json({ upvoted: i < 0, upvoteCount: commentUps(c) });
 });
 
 app.post('/api/posts/:id/view', auth, (req, res) => {
@@ -510,6 +630,59 @@ app.get('/api/locate', (req, res) => {
 app.get('/api/suggest', (req, res) => {
   const regionId = R(req.query.regionId) ? req.query.regionId : null;
   res.json({ positionIds: regionId ? suggestResponsible(regionId, req.query.category || 'Other') : [], by: 'rules' });
+});
+
+// Composer routing: deterministic, rules-based stand-in for AI routing. Reads the post text for a
+// category, works out the ward (road > GPS > picked ward > user's ward), maps category to the
+// department that owns it, and flags roads under DLP. Returns reasons the composer shows verbatim.
+const ROUTE_WORDS = {
+  'Pothole': ['pothole', 'potholes', 'crater', 'pit in the road', 'pits'],
+  'Road cave-in': ['cave-in', 'cave in', 'caved', 'sinkhole', 'collapsed', 'subsided'],
+  'Broken paver blocks': ['paver', 'pavers', 'paving block', 'paver block'],
+  'Open or broken manhole': ['manhole', 'manhole cover', 'open chamber'],
+  'Waterlogging': ['waterlogging', 'waterlogged', 'water logging', 'flooded', 'flooding', 'flood', 'knee-deep', 'knee deep', 'standing water', 'inundated'],
+  'Choked drain / nullah overflow': ['drain', 'drains', 'nullah', 'gutter', 'sewer', 'overflow', 'overflowing', 'choked', 'clogged', 'dirty water'],
+  'Streetlights': ['streetlight', 'streetlights', 'street light', 'street lights', 'lamp post', 'no lights'],
+  'Garbage': ['garbage', 'trash', 'waste', 'dumping', 'litter', 'rubbish', 'debris', 'stink'],
+  'Traffic': ['traffic', 'signal', 'jam', 'congestion', 'parking', 'wrong side'],
+  'Road related': ['road', 'footpath', 'divider', 'speed breaker', 'asphalt', 'tar', 'resurfacing', 'uneven'],
+};
+const ROUTE_DEPT = { 'Pothole': 'Roads', 'Road cave-in': 'Roads', 'Broken paver blocks': 'Roads', 'Road related': 'Roads', 'Waterlogging': 'Storm Water Drains', 'Choked drain / nullah overflow': 'Storm Water Drains', 'Open or broken manhole': 'Storm Water Drains', 'Streetlights': 'the ward office', 'Garbage': 'Solid Waste Management at the ward office', 'Traffic': 'Traffic Police', 'Other': 'the ward office' };
+app.post('/api/route-suggest', (req, res) => {
+  const b = req.body || {};
+  const text = `${b.title || ''} ${b.body || ''}`.toLowerCase();
+  let category = CATEGORIES.includes(b.category) ? b.category : 'Other', hits = [];
+  let best = 0;
+  for (const [cat, words] of b.categoryLocked ? [] : Object.entries(ROUTE_WORDS)) {
+    const found = words.filter((w) => new RegExp(`(^|[^a-z])${w.replace(/[-/]/g, '\\$&')}([^a-z]|$)`).test(text));
+    if (found.length > best) { best = found.length; category = cat; hits = found; }
+  }
+  const road = ROAD(b.roadId);
+  const loc = b.location && Number.isFinite(+b.location.lat) && Number.isFinite(+b.location.lng) ? locate(+b.location.lat, +b.location.lng) : null;
+  const u = getUser(req);
+  const [regionId, source] = road ? [road.regionId, `the road (${road.name})`] : loc ? [loc.id, 'your photo/GPS location'] : R(b.regionId) ? [b.regionId, 'the ward you picked'] : [u?.regionId || 'w_K-W', 'your home ward'];
+  const reg = R(regionId);
+  const levels = chain(regionId);
+  const covers = (p) => p.categories.includes(category);
+  let primary = null;
+  for (const rid of levels) {
+    const here = db.positions.filter((p) => p.regionId === rid && covers(p)).sort((a, b2) => a.rank - b2.rank);
+    primary = ROUTE_DEPT[category] === 'Traffic Police' ? here.find((p) => /Traffic/.test(p.title)) : ['Roads', 'Storm Water Drains'].includes(ROUTE_DEPT[category]) ? here.find((p) => p.kind === 'department') : here.find((p) => p.isHead);
+    if (primary) break;
+  }
+  primary = primary || POS(suggestResponsible(regionId, category)[0]);
+  const reasons = [];
+  reasons.push(hits.length ? `Your text mentions ${hits.slice(0, 3).map((h) => `"${h}"`).join(', ')}, so this reads as: ${category}.` : b.categoryLocked ? `You set the category yourself: ${category}.` : `No problem keywords recognised yet, so the selected category is used: ${category}.`);
+  if (primary) reasons.push(`${category} is handled by ${({ 'Roads': 'the Roads department', 'Storm Water Drains': 'the Storm Water Drains department' })[ROUTE_DEPT[category]] || ROUTE_DEPT[category] || 'the ward office'}. In ${R(primary.regionId)?.shortName || R(primary.regionId)?.name || 'this area'} that is the ${primary.title}.`);
+  reasons.push(`Area: ${reg?.shortName || reg?.name || regionId}, taken from ${source}.`);
+  let contractorId = null;
+  if (road?.underDlp) {
+    const wo = db.workOrders.filter((w) => w.roadId === road.id && w.contractorId).sort((a, b2) => (b2.completedAt || b2.assignedAt || 0) - (a.completedAt || a.assignedAt || 0))[0];
+    contractorId = wo?.contractorId || null;
+    reasons.push(`${road.name} (segment ${road.segment}) is under its Defect Liability Period: the contractor must repair it at no cost to BMC${contractorId ? `. Latest contractor on record: ${conName(contractorId)}` : ''}.`);
+  }
+  const alternatives = [...new Set([...suggestResponsible(regionId, category), ...levels.slice(0, 3).flatMap((rid) => db.positions.filter((p) => p.regionId === rid && covers(p)).sort((a, b2) => a.rank - b2.rank).map((p) => p.id))])].filter((id) => id !== primary?.id).slice(0, 6);
+  res.json({ positionId: primary?.id || null, reasons, alternatives, category, keywords: hits, regionId, contractorId, confidence: hits.length && (road || loc) ? 'high' : hits.length ? 'medium' : 'low', by: 'rules' });
 });
 
 // ---- Follow the rupee ----
@@ -567,9 +740,24 @@ app.get('/api/positions/:id/stats', (req, res) => {
 
 // ---- Stories (positions & contractors post short updates; followers see them, 24 h) ----
 const STORY_TTL = 24 * 3600e3;
+// Joint "solved" stories: 2–3 authorities announce together that one problem is solved. They stay up for a week.
+const JOINT_TTL = 7 * 24 * 3600e3;
+const isJoint = (st) => st.type === 'joint_solved';
+function jointGroup(st, viewer) {
+  const prob = POST(st.problemPostId);
+  const authors = st.authors.map((a) => { const p = POS(a.id); return { type: 'position', id: a.id, title: p?.title || 'Position', person: publicUser(USER(p?.holderUserId))?.name || null }; });
+  return {
+    key: 'joint:' + st.id, joint: true, actor: { type: 'joint' }, title: 'Solved', person: authors.map((a) => a.person).filter(Boolean).join(', '), authors,
+    problem: prob ? { id: prob.id, title: prob.title, status: prob.status } : null,
+    items: [{ id: st.id, text: st.text, createdAt: st.createdAt, seen: !!viewer && st.seenBy.includes(viewer.id) }],
+  };
+}
 app.get('/api/stories', (req, res) => {
   const viewer = getUser(req);
-  const live = (db.stories || []).filter((st) => Date.now() - st.createdAt < STORY_TTL);
+  const all = (db.stories || []).filter((st) => Date.now() - st.createdAt < (isJoint(st) ? JOINT_TTL : STORY_TTL));
+  const live = all.filter((st) => !isJoint(st));
+  const seesJoint = (st) => { if (!viewer) return false; const prob = POST(st.problemPostId); return st.authors.some((a) => viewer.following.positions.includes(a.id) || POS(a.id)?.holderUserId === viewer.id) || prob?.authorId === viewer.id || prob?.upvotes.includes(viewer.id); };
+  const joint = all.filter((st) => isJoint(st) && seesJoint(st)).sort((a, b) => b.createdAt - a.createdAt).map((st) => jointGroup(st, viewer));
   const follows = (st) => viewer && ((st.actor.type === 'position' && viewer.following.positions.includes(st.actor.id)) || (st.actor.type === 'contractor' && (viewer.contractorsFollowed || []).includes(st.actor.id)) || st.authorId === viewer.id);
   const groups = {};
   for (const st of live.filter(follows).sort((a, b) => a.createdAt - b.createdAt)) {
@@ -578,7 +766,36 @@ app.get('/api/stories', (req, res) => {
     (groups[k] ||= { key: k, actor: st.actor, title: label, person: publicUser(USER(st.authorId))?.name, items: [] }).items.push({ id: st.id, text: st.text, createdAt: st.createdAt, seen: st.seenBy.includes(viewer.id) });
   }
   const list = Object.values(groups).sort((a, b) => (a.items.every((i) => i.seen) - b.items.every((i) => i.seen)) || b.items.at(-1).createdAt - a.items.at(-1).createdAt);
-  res.json({ groups: list, unseen: list.reduce((n, g) => n + g.items.filter((i) => !i.seen).length, 0) });
+  const unseenIn = (gs) => gs.reduce((n, g) => n + g.items.filter((i) => !i.seen).length, 0);
+  res.json({ groups: [...list, ...joint], unseen: unseenIn(list), jointUnseen: unseenIn(joint) });
+});
+// Publish a joint solved story. The acting user must hold one of the 2–3 listed positions,
+// and every listed position must be responsible for (or above) the problem's area.
+app.post('/api/stories/joint', auth, (req, res) => {
+  const b = req.body || {};
+  const raw = Array.isArray(b.positionIds) ? b.positionIds.map(String) : [];
+  const ids = [...new Set(raw)];
+  if (ids.length !== raw.length || ids.length < 2 || ids.length > 3) return res.status(400).json({ error: 'Pick 2 or 3 different authorities' });
+  const list = ids.map((id) => POS(id));
+  if (list.some((p) => !p)) return res.status(400).json({ error: 'Unknown position' });
+  const prob = POST(b.problemPostId);
+  if (!prob || prob.tag !== 'problem') return res.status(404).json({ error: 'Problem post not found' });
+  const mine = list.find((p) => p.holderUserId === req.user.id && (!b.actingPositionId || p.id === b.actingPositionId));
+  if (!mine) return res.status(403).json({ error: 'You must hold one of the listed positions' });
+  const far = list.find((p) => !(prob.responsible.some((r) => r.positionId === p.id) || inSubtree(prob.regionId, p.regionId) || prob.mentions.some((m) => m.type === 'position' && m.id === p.id)));
+  if (far) return res.status(403).json({ error: `${far.title} is not responsible for this area` });
+  const text = String(b.text || '').trim();
+  if (text.length < 10) return res.status(400).json({ error: 'Say what was done (at least 10 characters)' });
+  const st = { id: 'js_' + crypto.randomBytes(4).toString('hex'), type: 'joint_solved', authors: ids.map((id) => ({ type: 'position', id })), problemPostId: prob.id, text: text.slice(0, 400), authorId: req.user.id, createdAt: Date.now(), seenBy: [] };
+  (db.stories ||= []).push(st);
+  for (const p of list) if (!prob.respondedByPositions.includes(p.id)) prob.respondedByPositions.push(p.id);
+  if (b.markResolved && prob.status !== 'resolved') { prob.status = 'resolved'; prob.resolvedAt = Date.now(); }
+  const others = list.length - 1;
+  notify([prob.authorId, ...prob.upvotes].filter((x) => x !== req.user.id), `${mine.title} and ${others} other ${others === 1 ? 'authority' : 'authorities'} published a joint story: "${prob.title}" is solved`, `#/post/${prob.id}`, 'joint_solved');
+  notify(list.filter((p) => p !== mine).map((p) => p.holderUserId).filter((x) => x !== req.user.id), `${mine.title} published a joint solved story with you on "${prob.title}"`, `#/post/${prob.id}`, 'joint_solved');
+  changed('posts', prob.id);
+  changed('stories', st.id);
+  res.json(jointGroup(st, req.user));
 });
 app.post('/api/stories', auth, (req, res) => {
   const a = req.body?.actingAs || {};

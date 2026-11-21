@@ -1,0 +1,50 @@
+/* joint — owned by the joint feature. Uses tokens from /styles.css only. */
+/* Joint "solved" stories: 2–3 authorities announce together that one problem is solved.
+   The 2px ring around overlapping avatars is the established story ring; nothing else here has an outline. */
+
+/* ---- Stories strip ---- */
+.story-slots { display: flex; gap: var(--s4); align-items: flex-start; }
+.story-slot-i { display: flex; flex-direction: column; align-items: center; flex: none; }
+.joint-faces { display: inline-flex; align-items: center; }
+.joint-pill { border-color: var(--election); }
+.joint-pill.seen { border-color: var(--line2); }
+.joint-label { display: inline-flex; align-items: center; gap: var(--s1); color: var(--election); font-weight: 600; }
+
+/* ---- Story viewer ---- */
+.joint-view { text-align: left; }
+.joint-view .story-bars i.joint-run::after { animation-duration: 10s; }
+.joint-ring { display: inline-flex; flex: none; padding: 2px; border: 2px solid var(--election); border-radius: 999px; }
+.joint-ring .avatar + .avatar { margin-left: -10px; outline: 2px solid var(--bg); }
+.joint-solved { display: inline-flex; align-items: center; gap: var(--s1); color: var(--election); font: 600 var(--t-lg)/var(--lh-lg) var(--sans); }
+.joint-meta { font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--muted); }
+.joint-body { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: var(--s5); width: 100%; max-width: 560px; margin: 0 auto; padding: var(--s6) 0; }
+.joint-problem { align-self: flex-start; padding: var(--s1) var(--s2); border-radius: var(--r2); background: var(--election-soft); color: var(--election); font: 600 var(--t-sm)/var(--lh-sm) var(--sans); }
+.joint-text { margin: 0; color: var(--text); font: 500 var(--t-xl)/var(--lh-xl) var(--sans); text-wrap: pretty; }
+.joint-authors { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s1); }
+.joint-authors a { display: flex; align-items: center; gap: var(--s3); padding: var(--s2) var(--s3); border-radius: var(--r2); background: var(--raised2); }
+.joint-authors b { display: block; font: 600 var(--t-sm)/var(--lh-sm) var(--sans); }
+.joint-authors .grow > span { display: block; font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--muted); }
+.joint-link { align-self: flex-start; display: inline-flex; align-items: center; gap: var(--s1); padding: var(--s2) 0; color: var(--link); font: 600 var(--t-md)/var(--lh-md) var(--sans); }
+.joint-link:hover { text-decoration: underline; }
+
+/* ---- Thread page: official panel action ---- */
+.joint-action { margin: var(--s2) 0 var(--s3); }
+.joint-btn { gap: var(--s2); border: 0; background: var(--election-soft); color: var(--election); }
+.joint-btn:hover { background: var(--election); color: var(--election-ink); }
+
+/* ---- Sheet ---- */
+.joint-sheet { display: flex; flex-direction: column; gap: var(--s2); }
+.joint-intro { margin: 0; font-size: var(--t-sm); line-height: var(--lh-sm); color: var(--text2); }
+.joint-sec { display: flex; justify-content: space-between; margin-top: var(--s4); color: var(--muted); font: 600 var(--t-xs)/var(--lh-xs) var(--sans); text-transform: uppercase; letter-spacing: .04em; }
+.joint-sec span { font-weight: 400; text-transform: none; letter-spacing: 0; }
+.joint-prob { font: 600 var(--t-md)/var(--lh-md) var(--sans); }
+.joint-cand { display: flex; align-items: center; gap: var(--s3); width: 100%; padding: var(--s3); border-radius: var(--r2); background: var(--raised); text-align: left; }
+.joint-cand:hover:not(:disabled):not(.me):not(.on) { background: var(--raised2); }
+.joint-cand.me, .joint-cand.on { background: var(--election-soft); }
+.joint-cand:disabled { opacity: .45; cursor: default; }
+.joint-tick { display: flex; align-items: center; justify-content: center; flex: none; width: 24px; height: 24px; border-radius: var(--r2); color: var(--election); }
+.joint-cand:not(.on):not(.me) .joint-tick { background: var(--surface); }
+.joint-sheet textarea { border: 0; border-radius: var(--r2); background: var(--raised2); font-size: var(--t-md); line-height: var(--lh-md); resize: vertical; }
+.joint-count { align-self: flex-end; font-size: var(--t-xs); line-height: var(--lh-xs); color: var(--muted); }
+.joint-check { display: flex; align-items: center; gap: var(--s3); padding: var(--s2) 0; font-size: var(--t-sm); line-height: var(--lh-sm); }
+.joint-sheet .btn-block { margin-top: var(--s3); }

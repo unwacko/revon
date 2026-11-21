@@ -54,7 +54,7 @@ function PositionDashboard({ id, query }) {
         <label class="dash-check" aria-label="Select"><input type="checkbox" checked=${sel.includes(x.id)} onChange=${() => toggle(x.id)} /><span class="rank">#${i + 1}</span></label>
         <a class="dash-main" href=${'#/post/' + x.id}>
           <div class="row-t">${x.title}</div>
-          <div class="row-s">▲ ${x.upvoteCount} · 💬 ${x.commentCount} · ${x.regionName} · ${ago(x.createdAt)}${x.road ? ' · ' + x.road.name : ''}</div>
+          <div class="row-s"><span class="with-ic"><${Icon} n="up" s=${12} /> ${x.upvoteCount}</span> · <span class="with-ic"><${Icon} n="comment" s=${12} /> ${x.commentCount}</span> · ${x.regionName} · ${ago(x.createdAt)}${x.road ? ' · ' + x.road.name : ''}</div>
           <div class="chips"><${StatusPill} status=${x.status} />${!x.viewed ? html`<span class="flag-new">New</span>` : null}${!x.responded && x.status !== 'resolved' ? html`<span class="flag-due">No response</span>` : null}${x.assignedToMe ? html`<span class="chip">Assigned to you</span>` : null}</div>
         </a>
       </div>`) : html`<${Empty}>Nothing here — good work.</${Empty}>`}
