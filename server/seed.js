@@ -215,8 +215,38 @@ export function buildSeed() {
   }
   const postById = Object.fromEntries(posts.map((p) => [p.id, p]));
 
-  // ---------------- Progress posts from work orders ----------------
-  for (const w of workOrders) {
+  // ---------------- Normal (white) posts: just two citizen posts from the social data ----------------
+  for (const s of social.filter((x) => ['SOC00565', 'SOC00223'].includes(x.post_id))) {
+    const loc = findLocality(s.text);
+    const uid = 'u_s_' + s.author_handle.replace(/[^a-z0-9]/gi, '');
+    users.push({ id: uid, role: 'citizen', verified: true, onboarded: true, anonHandle: 'Citizen ' + uid.slice(-5).toUpperCase(), regionId: loc ? wardRegionId(loc.ward_code) : 'r_bmc', following: { positions: [], users: [], regions: [] }, createdAt: ist(s.posted_at) - 30 * 864e5 });
+    const text = translate(s.text) || s.text;
+    const firstLine = text.split(/[.!?\n]/)[0].trim();
+    posts.push({
+      id: s.post_id, authorId: uid, actingAs: { type: 'citizen' }, tag: 'normal', title: firstLine.length > 90 ? firstLine.slice(0, 87) + '…' : firstLine, body: text,
+      source: { type: 'social', channel: s.source }, images: [], mentions: [], linkedProblemIds: [], workOrderIds: [], regionId: loc ? wardRegionId(loc.ward_code) : 'r_bmc', roadId: null,
+      upvoteBase: Math.round((+s.likes_or_forwards || 0) / 10), upvotes: [], status: null, viewedByPositions: [], respondedByPositions: [], responsible: [], category: null, location: null, projectId: null,
+      moderation: { botVerified: null }, createdAt: ist(s.posted_at),
+    });
+  }
+
+  // ---------------- Admin posts ----------------
+  const admin = (id, tag, title, body, regionId, createdAt, mentions = []) => posts.push({ id, authorId: 'u_admin', actingAs: { type: 'admin' }, tag, title, body, images: [], mentions, linkedProblemIds: [], workOrderIds: [], regionId, roadId: null, upvoteBase: 40, upvotes: [], status: null, viewedByPositions: [], respondedByPositions: [], responsible: [], category: null, location: null, projectId: null, moderation: { botVerified: null }, createdAt });
+  admin('ADM-1', 'position_change', 'New Executive Engineer (Roads) for K/W Ward', `${users.find((u) => u.id === P.p_eer_kw.holderUserId).realName} has taken charge as Executive Engineer, Roads for K/W Ward (Andheri West, Juhu, Versova). Pothole and cave-in complaints in K/W now route to this office.`, wardRegionId('K/W'), Date.parse('2025-06-02T10:00:00+05:30'), [{ type: 'position', id: 'p_eer_kw' }]);
+  admin('ADM-2', 'election', 'BMC elections: who is responsible for your road?', 'Corporators raise and approve ward works. The Assistant Municipal Commissioner runs the ward office and its budget. The Executive Engineer (Roads) issues and certifies repair work orders. Contractors must repair roads still under their Defect Liability Period at no cost to BMC. Check your ward page to see each office and how the monsoon money was spent.', 'r_bmc', Date.parse('2025-09-20T10:00:00+05:30'));
+
+  admin('ADM-3', 'position_change', 'New Assistant Municipal Commissioner for F/S Ward', `${users.find((u) => u.id === P.p_amc_fs.holderUserId).realName} has taken charge of the F/S Ward office (Parel, Lalbaug, Hindmata). Waterlogging complaints at Hindmata and King Edward Memorial Hospital approach roads are the first priority.`, wardRegionId('F/S'), Date.parse('2025-07-01T10:00:00+05:30'), [{ type: 'position', id: 'p_amc_fs' }]);
+  admin('ADM-4', 'election', 'Ward elections: what your corporator will be responsible for', 'Each administrative ward elects several corporators. After the election they sit on the ward committee, which approves road and drain works, reviews monsoon repair spending and can question contractors whose fixes fail. Check your ward page to see last season\'s money trail before you vote.', 'r_bmc', Date.parse('2025-10-02T10:00:00+05:30'));
+
+  // ---------------- Demo citizen + follows ----------------
+  const demo = posts.find((p) => p.tag === 'problem' && p.regionId === wardRegionId('K/W') && p.status === 'resolved' && p.workOrderIds.length && workOrders.find((w) => w.id === p.workOrderIds[0])?.reopened);
+  const demoUser = users.find((u) => u.id === demo.authorId);
+  demoUser.id = 'u_demo'; demo.authorId = 'u_demo'; demoUser.realName = 'Demo Citizen';
+  demoUser.following.positions = ['p_amc_kw', 'p_swd_kw', 'p_corp_kw', 'p_mayor'];
+
+  // ---------------- Progress (purple) posts: just two, from real work orders ----------------
+  const drainWo = workOrders.find((w) => w.wardCode === 'F/S' && w.workType === 'Waterlogging' && w.complaintIds.length >= 2 && !w.reopened);
+  for (const w of [workOrders.find((x) => x.id === demo.workOrderIds[0]), drainWo].filter(Boolean)) {
     const k = wardKey(w.wardCode);
     const posId = ROAD_CATS.includes(w.workType) ? 'p_eer_' + k : 'p_swd_' + k;
     const road = roadById[w.roadId];
@@ -232,32 +262,6 @@ export function buildSeed() {
     });
   }
 
-  // ---------------- Social posts → normal posts ----------------
-  for (const s of social) {
-    const loc = findLocality(s.text);
-    const uid = 'u_s_' + s.author_handle.replace(/[^a-z0-9]/gi, '');
-    if (!users.some((u) => u.id === uid)) users.push({ id: uid, role: 'citizen', verified: true, onboarded: true, anonHandle: 'Citizen ' + uid.slice(-5).toUpperCase(), ...(choosesName(uid) ? { realName: nextName(), showName: true } : {}), regionId: loc ? wardRegionId(loc.ward_code) : 'r_bmc', following: { positions: [], users: [], regions: [] }, createdAt: ist(s.posted_at) - 30 * 864e5 });
-    const englishText = translate(s.text);
-    const text = english(englishText || s.text, loc ? `Post about ${loc.locality}.` : 'Post from a Mumbai citizen.');
-    const firstLine = text.split(/[.!?\n]/)[0].trim();
-    posts.push({
-      id: s.post_id, authorId: uid, actingAs: { type: 'citizen' }, tag: 'normal', title: firstLine.length > 90 ? firstLine.slice(0, 87) + '…' : firstLine || 'Post', body: text, originalLanguage: englishText ? ({ hi: 'Hindi', mr: 'Marathi', 'hi-en': 'Hinglish' }[guessLang(s.text)]) : null,
-      source: { type: 'social', channel: s.source }, images: [], mentions: [], linkedProblemIds: [], workOrderIds: [], regionId: loc ? wardRegionId(loc.ward_code) : 'r_bmc', roadId: null,
-      upvoteBase: Math.round((+s.likes_or_forwards || 0) / 10), upvotes: [], status: null, viewedByPositions: [], respondedByPositions: [], responsible: [], category: null, location: null, projectId: null,
-      moderation: { botVerified: null }, createdAt: ist(s.posted_at),
-    });
-  }
-
-  // ---------------- Admin posts ----------------
-  const admin = (id, tag, title, body, regionId, createdAt, mentions = []) => posts.push({ id, authorId: 'u_admin', actingAs: { type: 'admin' }, tag, title, body, images: [], mentions, linkedProblemIds: [], workOrderIds: [], regionId, roadId: null, upvoteBase: 40, upvotes: [], status: null, viewedByPositions: [], respondedByPositions: [], responsible: [], category: null, location: null, projectId: null, moderation: { botVerified: null }, createdAt });
-  admin('ADM-1', 'position_change', 'New Executive Engineer (Roads) for K/W Ward', `${users.find((u) => u.id === P.p_eer_kw.holderUserId).realName} has taken charge as Executive Engineer, Roads for K/W Ward (Andheri West, Juhu, Versova). Pothole and cave-in complaints in K/W now route to this office.`, wardRegionId('K/W'), Date.parse('2025-06-02T10:00:00+05:30'), [{ type: 'position', id: 'p_eer_kw' }]);
-  admin('ADM-2', 'election', 'BMC elections: who is responsible for your road?', 'Corporators raise and approve ward works. The Assistant Municipal Commissioner runs the ward office and its budget. The Executive Engineer (Roads) issues and certifies repair work orders. Contractors must repair roads still under their Defect Liability Period at no cost to BMC. Check your ward page to see each office and how the monsoon money was spent.', 'r_bmc', Date.parse('2025-09-20T10:00:00+05:30'));
-
-  // ---------------- Demo citizen + follows ----------------
-  const demo = posts.find((p) => p.tag === 'problem' && p.regionId === wardRegionId('K/W') && p.status === 'resolved' && p.workOrderIds.length && workOrders.find((w) => w.id === p.workOrderIds[0])?.reopened);
-  const demoUser = users.find((u) => u.id === demo.authorId);
-  demoUser.id = 'u_demo'; demo.authorId = 'u_demo'; demoUser.realName = 'Demo Citizen';
-  demoUser.following.positions = ['p_amc_kw', 'p_swd_kw', 'p_corp_kw', 'p_mayor'];
 
   // ---------------- Projects (planned works, open for bids) ----------------
   const topRoad = (code) => {

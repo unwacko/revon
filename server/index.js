@@ -13,7 +13,7 @@ const DATA_DIR = process.env.DATA_DIR || path.join(ROOT, 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
 const PORT = Number(process.env.PORT || 3000);
-const SEED_VERSION = 7;
+const SEED_VERSION = 8;
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
@@ -227,8 +227,9 @@ function hot(p) {
 const HIDDEN = new Set(['duplicate', 'rejected']);
 function typeWeight(p) {
   if (p.tag === 'problem') return ROAD_CATS.includes(p.category) ? 1.25 : DRAIN_CATS.includes(p.category) ? 1.05 : 0.75;
-  if (p.tag === 'normal') return p.source?.type === 'social' ? 0.5 : 0.8;
-  return { progress: 0.9, position_change: 1.1, election: 1.2 }[p.tag] || 1;
+  // Non-problem posts are rare (a couple of each), so they get a boost to surface among problems.
+  if (p.tag === 'normal') return 1.2;
+  return { progress: 1.6, position_change: 1.4, election: 1.4 }[p.tag] || 1;
 }
 function rankFor(viewer, p) {
   const reasons = [];
@@ -456,7 +457,18 @@ app.get('/api/feed', (req, res) => {
     ranked.push({ p, ...r });
   }
   ranked.sort((a, b) => b.score - a.score);
-  res.json(ranked.slice(offset, offset + limit).map(({ p, reasons }) => ({ ...decorate(p, viewer), reasons })));
+  let ordered = ranked;
+  if (tab === 'foryou') {
+    // Problems stay the majority; the few other post types are mixed in, one every 5th slot.
+    const others = ranked.filter((x) => x.p.tag !== 'problem');
+    const problems = ranked.filter((x) => x.p.tag === 'problem');
+    ordered = [];
+    while (problems.length || others.length) {
+      if (others.length && (ordered.length % 5 === 2 || !problems.length)) ordered.push(others.shift());
+      else ordered.push(problems.shift());
+    }
+  }
+  res.json(ordered.slice(offset, offset + limit).map(({ p, reasons }) => ({ ...decorate(p, viewer), reasons })));
 });
 
 app.get('/api/posts', (req, res) => {
