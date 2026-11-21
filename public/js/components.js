@@ -1,4 +1,5 @@
 import { html, useState, useEffect, useRef, store, post, toast, go, region, position, contractor, person, isFollowing, toggleFollow, ago, inr, rs, pct, fmtDate, TAGS, STATUS, chain, children, levelLabel, regionName } from './lib.js';
+import { postPhoto, storyPhoto, credit } from './photos.js';
 import * as L from '/vendor/leaflet/leaflet-src.esm.js';
 
 // ---------------- Icons ----------------
@@ -166,6 +167,11 @@ export function RepairStrip({ wo }) {
 // To fill a holder later, add an image URL to the post's `images` array.
 export function PostMedia({ p, note = true }) {
   const imgs = (p.images || []).filter(Boolean);
+  const ill = !imgs.length && postPhoto(p);
+  if (ill) return html`<figure class="post-figure post-figure-ill">
+    <div class="post-images n1"><img src=${ill.src} alt=${p.photoNote || 'Illustrative photo of a road problem'} loading="lazy" /></div>
+    <figcaption>${credit(ill)}</figcaption>
+  </figure>`;
   if (imgs.length) return html`<figure class="post-figure">
     <div class=${'post-images n' + Math.min(imgs.length, 3)}>${imgs.slice(0, 3).map((src) => html`<img src=${src} alt=${p.photoNote || 'Photo attached to this post'} loading="lazy" />`)}</div>
   </figure>`;
@@ -451,6 +457,7 @@ function StoryViewer({ groups, start, onClose }) {
     </div>
     <div class="joint-body">
       ${g.problem ? html`<div class="joint-problem">${g.problem.title}</div>` : null}
+      <figure class="story-photo"><img src=${storyPhoto(it.id, true).src} alt="Road work" /><figcaption>${credit(storyPhoto(it.id, true))}</figcaption></figure>
       <p class="joint-text">${it.text}</p>
       <ul class="joint-authors">${g.authors.map((a) => html`<li><a href=${'#/position/' + a.id} onClick=${leave}><${Avatar} name=${a.person || a.title} size=${32} /><span class="grow"><b>${a.title}</b><span>${a.person || 'Vacant'}</span></span></a></li>`)}</ul>
       ${g.problem ? html`<a class="joint-link" href=${'#/post/' + g.problem.id} onClick=${leave}>View the problem <${Icon} n="chev" s=${16} /></a>` : null}
@@ -460,6 +467,7 @@ function StoryViewer({ groups, start, onClose }) {
   return html`<div class="story-view" onClick=${(e) => (e.clientX < innerWidth / 3 ? prev() : next())}>
     <div class="story-bars">${g.items.map((_, i) => html`<i class=${i < ii ? 'done' : i === ii ? 'run' : ''} key=${gi + '-' + i + '-' + ii}></i>`)}</div>
     <div class="story-head"><${Avatar} name=${g.person || g.title} size=${40} ring="official" /><a href=${href} onClick=${(e) => { e.stopPropagation(); onClose(); }}><b>${g.title}</b><div class="dim small">${g.person || ''} · ${ago(it.createdAt)}</div></a><button class="icon-btn" aria-label="Close" onClick=${(e) => { e.stopPropagation(); onClose(); }}><${Icon} n="x" s=${30} /></button></div>
+    <figure class="story-photo"><img src=${storyPhoto(it.id).src} alt="Road work" /><figcaption>${credit(storyPhoto(it.id))}</figcaption></figure>
     <div class="story-text">${it.text}</div>
   </div>`;
 }

@@ -570,3 +570,10 @@ input.switch:checked { background: var(--text); } input.switch:checked::after { 
 .profile-actions { padding: var(--s1) var(--s2); }
 .profile-actions .row { padding: var(--s3); }
 .award-reason { border-left: 4px solid var(--progress); }
+
+/* Illustrative photos (Wikimedia Commons) in posts and stories */
+.post-figure-ill figcaption { font-size: 11px; line-height: 14px; color: var(--muted); padding: var(--s1) 0 0; }
+.story-photo { margin: var(--s4) auto 0; width: 100%; max-width: 640px; }
+.story-photo img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: var(--r1); }
+.story-photo figcaption { font-size: 11px; line-height: 14px; color: var(--muted); padding-top: var(--s1); }
+.story-view .story-text { flex: 0 0 auto; padding-top: var(--s5); }
