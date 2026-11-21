@@ -255,6 +255,8 @@ div.with-ic { display: flex; }
 /* ================= Avatars ================= */
 .avatar { display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; color: #fff; font-weight: 600; flex: none; line-height: 1; }
 .avatar.ring { box-shadow: none; }
+.avatar { overflow: hidden; }
+.avatar > img { width: 100%; height: 100%; object-fit: cover; object-position: center 20%; display: block; }
 
 /* ================= Buttons (flat, no borders) ================= */
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--s2); border-radius: var(--r1); height: 40px; padding: 0 var(--s4); font-weight: 600; font-size: var(--t-sm); white-space: nowrap; text-align: center; border: 0; }
@@ -567,3 +569,4 @@ input.switch:checked { background: var(--text); } input.switch:checked::after { 
 /* Profile: one container rhythm */
 .profile-actions { padding: var(--s1) var(--s2); }
 .profile-actions .row { padding: var(--s3); }
+.award-reason { border-left: 4px solid var(--progress); }

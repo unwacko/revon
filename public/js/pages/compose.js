@@ -1,4 +1,4 @@
-import { html, useState, useEffect, useRef, useStore, api, post, go, toast, position, contractor, region, person, actingAs, setMode, chain, positionsIn, compressImage, M, TAGS, levelLabel } from '../lib.js';
+import { html, useState, useEffect, useRef, useStore, api, post, go, toast, position, contractor, region, person, actingAs, setMode, loadMeta, chain, positionsIn, compressImage, M, TAGS, levelLabel } from '../lib.js';
 import { Header, Icon, Avatar, ComingSoon, Sheet, PositionRow, ContractorRow, AreaMap, Loading } from '../components.js';
 
 // Composer. One writing surface (headline, then body), the post type as a segmented control,
@@ -154,7 +154,7 @@ export function Compose({ query }) {
   const identity = act.type === 'position' ? { name: position(act.id)?.title, sub: person(position(act.id)?.holderUserId)?.name || 'Official', ring: 'official' }
     : act.type === 'contractor' ? { name: contractor(act.id)?.name, sub: 'Contractor', ring: 'contractor' }
     : act.type === 'admin' ? { name: 'Platform Admin', sub: 'Verified platform account', ring: 'admin' }
-    : { name: me?.handle || 'Citizen', sub: isPublicPerson ? 'Citizen, under your public name' : 'Citizen', kind: isPublicPerson ? 'public' : 'anon' };
+    : { name: me?.handle || 'Citizen', sub: isPublicPerson ? 'Citizen, under your public name' : 'Citizen', kind: isPublicPerson ? 'public' : me?.showName ? 'citizen' : 'anon' };
   const modes = [['citizen', me?.handle || 'Citizen', 'Citizen'],
     ...(me?.positionIds || []).map((id) => ['position:' + id, position(id)?.title, 'Official']),
     ...(me?.contractorIds || []).map((id) => ['contractor:' + id, contractor(id)?.name, 'Contractor']),
@@ -184,7 +184,7 @@ export function Compose({ query }) {
         ${act.type === 'citizen' ? html`<div class="cmp-mask">
           ${isPublicPerson
             ? html`<div class="grow"><div class="cmp-mask-k">Hide my name</div><div class="cmp-mask-v">You hold a public role, so citizen posts show your name.</div></div><${ComingSoon} label="Hide my name" icon="user" />`
-            : html`<label class="cmp-switch-row"><div class="grow"><div class="cmp-mask-k">Hide my name</div><div class="cmp-mask-v">Always on for citizens. People see “${me?.handle || 'Citizen'}”, never your real name.</div></div><input type="checkbox" class="cmp-switch" role="switch" checked disabled aria-label="Hide my name" /></label>`}
+            : html`<label class="cmp-switch-row"><div class="grow"><div class="cmp-mask-k">Hide my name</div><div class="cmp-mask-v">${me?.showName ? `Off: people see “${me.realName}”.` : `On: people see “${me?.handle || 'Citizen'}”, never your real name.`}</div></div><input type="checkbox" class="cmp-switch" role="switch" checked=${!me?.showName} onChange=${async (e) => { try { await post('/me/identity', { showName: !e.target.checked }); await loadMeta(); } catch { toast('Could not save'); } }} aria-label="Hide my name" /></label>`}
         </div>` : null}
 
         <div class="cmp-types" role="radiogroup" aria-label="Post type">

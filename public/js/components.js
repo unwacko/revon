@@ -47,10 +47,26 @@ export const Icon = ({ n, s = 24, w = 1.9, fill }) => html`<svg class="ic" width
 
 // ---------------- Avatars ----------------
 const hue = (s) => [...(s || 'x')].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 360, 7);
+// Portrait pool (public/img/people). Add new files to the lists below as more grids are cropped.
+const FEMALE = new Set(['Aarti', 'Sunita', 'Meenal', 'Farah', 'Kavita', 'Shraddha', 'Pallavi', 'Deepa', 'Swati', 'Neelam', 'Rekha', 'Ayesha', 'Varsha', 'Jyoti', 'Anjali', 'Leena', 'Madhuri', 'Bhavna']);
+const MALE = new Set(['Rajesh', 'Vikram', 'Sachin', 'Nitin', 'Anil', 'Manoj', 'Imran', 'Rohit', 'Ganesh', 'Prakash', 'Tushar', 'Hemant', 'Sameer', 'Kiran', 'Mohan', 'Yogesh', 'Suresh', 'Rahul']);
+const PORTRAITS = { official: { f: [2, 4, 6, 9, 11, 14, 16], m: [1, 3, 5, 7, 8, 10, 12, 13, 15] }, citizen: { f: [2, 4, 6, 8], m: [1, 3, 5, 7] } }; // <set>_NN.jpg
+const AESTHETIC = [9, 10, 11, 12, 13, 14, 15, 16]; // citizen_NN.jpg: non-face avatars for citizens who stay anonymous
+const img = (set, n) => `/img/people/${set}_${String(n).padStart(2, '0')}.jpg`;
+const portrait = (name, kind) => {
+  if (kind === 'anon') { const h = hue(name); return h % 3 === 0 ? null : img('citizen', AESTHETIC[(h * 7) % AESTHETIC.length]); } // some keep the plain icon
+  const first = (name || '').trim().split(' ')[0];
+  const g = FEMALE.has(first) ? 'f' : MALE.has(first) ? 'm' : null;
+  if (!g) return null;
+  const set = kind === 'citizen' ? 'citizen' : 'official', list = PORTRAITS[set][g];
+  return img(set, list[hue(name) % list.length]);
+};
+// kind: 'public' (official / contractor), 'citizen' (citizen who chose to show their name), 'anon' (handle only)
 export function Avatar({ name, size = 36, kind, ring }) {
+  const photo = portrait(name, kind);
   const initials = kind === 'anon' ? '' : (name || '?').replace(/\(.*\)/, '').split(' ').filter(Boolean).slice(0, 2).map((x) => x[0]).join('').toUpperCase();
   const style = `width:${size}px;height:${size}px;font-size:${size * 0.38}px;background:${kind === 'anon' ? 'var(--anon)' : `hsl(${hue(name)} 45% 42%)`}`;
-  return html`<span class=${'avatar' + (ring ? ' ring ring-' + ring : '')} style=${style}>${kind === 'anon' ? html`<${Icon} n="user" s=${size * 0.55} />` : initials}</span>`;
+  return html`<span class=${'avatar' + (ring ? ' ring ring-' + ring : '')} style=${style}>${photo ? html`<img src=${photo} alt="" loading="lazy" />` : kind === 'anon' ? html`<${Icon} n="user" s=${size * 0.55} />` : initials}</span>`;
 }
 
 export const TagPill = ({ tag }) => html`<span class=${'tag tag-' + tag}>${TAGS[tag]?.label || tag}</span>`;

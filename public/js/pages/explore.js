@@ -438,7 +438,7 @@ export function ProjectPage({ id }) {
   const pctv = pj.budget ? Math.min(100, Math.round((pj.spent / pj.budget) * 100)) : 0;
   const bids = [...pj.bids].sort((a, b) => a.amount - b.amount);
   const minAmt = bids[0]?.amount, minDays = Math.min(...bids.map((b) => b.timelineDays));
-  const award = async (contractorId) => { try { await post(`/projects/${id}/award`, { contractorId }); toast('Contract awarded'); } catch (e) { toast(e.message); } };
+  const [awardFor, setAwardFor] = useState(null);
   const progressPosts = (updates.data || []).filter((x) => x.tag === 'progress');
   const problems = (updates.data || []).filter((x) => x.tag === 'problem');
   const road = pj.roadId && M().roads.find((r) => r.id === pj.roadId);
@@ -464,6 +464,11 @@ export function ProjectPage({ id }) {
       <div class="kv"><span>Contractor</span>${pj.contractorId ? html`<a href=${'#/contractor/' + pj.contractorId}>${contractor(pj.contractorId).name}</a>` : html`<i>Not awarded yet</i>`}</div>
       <div class="kv"><span>Timeline</span><span>${fmtDate(pj.startDate)} → ${pj.endDate ? fmtDate(pj.endDate) : 'ongoing'}</span></div>
     </section>
+    ${pj.awardReason ? html`<section class="card pad award-reason">
+      <div class="sec-h"><b>Why ${contractor(pj.contractorId)?.name} won</b><span class="dim small">Public · ${fmtDate(pj.awardedAt)}</span></div>
+      <p>${pj.awardReason}</p>
+      <div class="dim small">— ${position(pj.approvedByPositionId)?.title}${person(pj.approvedByUserId) ? ', ' + person(pj.approvedByUserId).name : ''}</div>
+    </section>` : null}
     <section class="card pad">
       <div class="sec-h"><b>Bidders compared</b><span class="dim small">${bids.length} bids</span></div>
       ${bids.length ? html`<div class="table-wrap"><table class="bids">
@@ -472,7 +477,7 @@ export function ProjectPage({ id }) {
           <td><a href=${'#/contractor/' + b.contractorId}>${contractor(b.contractorId)?.name}</a>${b.note ? html`<div class="dim small">${b.note}</div>` : null}</td>
           <td>${inr(b.amount)}${b.amount === minAmt ? html`<div class="best">lowest</div>` : null}</td>
           <td>${b.timelineDays}${b.timelineDays === minDays ? html`<div class="best">fastest</div>` : null}</td>
-          <td>${b.contractorId === pj.contractorId ? html`<span class="status st-resolved">Awarded</span>` : isOwner && pj.status === 'bidding' ? html`<button class="btn btn-primary btn-sm" onClick=${() => award(b.contractorId)}>Award</button>` : null}</td>
+          <td>${b.contractorId === pj.contractorId ? html`<span class="status st-resolved">Awarded</span>` : isOwner && pj.status === 'bidding' ? html`<button class="btn btn-primary btn-sm" onClick=${() => setAwardFor(b.contractorId)}>Award</button>` : null}</td>
         </tr>`)}</tbody></table></div>
         <a class="link small" href="#/scorecards">Compare their scorecards before awarding ›</a>` : html`<div class="dim small">No bids yet.</div>`}
       ${pj.status === 'bidding' && myCons.length ? html`<button class="btn btn-primary btn-block" onClick=${() => setBidOpen(true)}>Place a bid</button>` : null}
@@ -482,7 +487,17 @@ export function ProjectPage({ id }) {
     <div class="sec-h pad-x"><b>Progress updates</b></div>
     ${progressPosts.length ? html`<div class="feed">${progressPosts.map((x) => html`<${PostCard} p=${x} compact />`)}</div>` : html`<${Empty}>No updates yet.</${Empty}>`}
     <${BidSheet} open=${bidOpen} onClose=${() => setBidOpen(false)} pj=${pj} contractorIds=${myCons} />
-    <${EditProjectSheet} open=${editOpen} onClose=${() => setEditOpen(false)} pj=${pj} />`;
+    <${EditProjectSheet} open=${editOpen} onClose=${() => setEditOpen(false)} pj=${pj} />
+    <${AwardSheet} pj=${pj} contractorId=${awardFor} onClose=${() => setAwardFor(null)} />`;
+}
+
+function AwardSheet({ pj, contractorId, onClose }) {
+  const [reason, setReason] = useState('');
+  if (!contractorId) return null;
+  const submit = async (e) => { e.preventDefault(); try { await post(`/projects/${pj.id}/award`, { contractorId, reason }); toast('Contract awarded'); onClose(); } catch (err) { toast(err.message); } };
+  return html`<${Sheet} open title=${'Award to ' + contractor(contractorId)?.name} onClose=${onClose}><form class="form" onSubmit=${submit}>
+    <label class="field"><span>Why this contractor? This is shown publicly on the project page.</span><textarea rows="4" required minlength="20" value=${reason} onInput=${(e) => setReason(e.target.value)} placeholder="e.g. Not the lowest bid, but the only one that finishes before the monsoon and includes a 3-year defect liability."></textarea></label>
+    <button class="btn btn-primary btn-block">Award and publish reason</button></form></${Sheet}>`;
 }
 
 function BidSheet({ open, onClose, pj, contractorIds }) {
@@ -517,11 +532,11 @@ export function PersonPage({ id }) {
   return html`
     <${Header} title=${anon ? 'Citizen' : p.name} back />
     <section class="profile">
-      <div class="profile-top"><${Avatar} name=${p.name} kind=${p.kind} size=${88} ring=${anon ? null : 'official'} />
+      <div class="profile-top"><${Avatar} name=${p.name} kind=${p.kind} size=${88} ring=${anon || p.kind === 'citizen' ? null : 'official'} />
         <div class="profile-stats"><div><b>${posts.data?.length ?? '—'}</b><span>posts</span></div><div><b>${info.data.followers}</b><span>followers</span></div><div><b>${posts.data?.reduce((a, x) => a + x.upvoteCount, 0) ?? '—'}</b><span>upvotes</span></div></div>
       </div>
       <div class="profile-name">${p.name}</div>
-      <div class="profile-sub">${anon ? 'Verified citizen · identity hidden' : html`<${Party} party=${p.party} />`} · <a href=${'#/region/' + p.regionId}>${regionName(p.regionId)}</a></div>
+      <div class="profile-sub">${anon ? 'Verified citizen · identity hidden' : p.kind === 'citizen' ? 'Verified citizen' : html`<${Party} party=${p.party} />`} · <a href=${'#/region/' + p.regionId}>${regionName(p.regionId)}</a></div>
       ${!info.data.isMe && p.kind !== 'admin' ? html`<div class="btn-row"><${FollowButton} type="user" id=${id} /></div>` : null}
     </section>
     ${!anon && p.positionIds?.length ? html`<section class="card pad"><div class="sec-h"><b>Positions held</b></div>${p.positionIds.map((pid) => html`<${PositionRow} p=${position(pid)} showRegion right=${null} />`)}</section>` : null}

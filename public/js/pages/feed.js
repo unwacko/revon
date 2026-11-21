@@ -17,7 +17,7 @@ export function PostBox() {
   if (!s.token) return html`<div class="card pad center"><b>See what's broken on Mumbai's roads — and who is responsible.</b><p class="dim">Sign in with DigiLocker to post, upvote and follow your representatives.</p><a class="btn btn-primary" href="#/login">Sign in</a></div>`;
   const placeholder = s.mode === 'citizen' ? 'Report a road problem…' : s.mode === 'admin' ? 'Post an announcement…' : 'Post a progress update…';
   return html`<div class="postbox">
-    <${Avatar} kind=${s.mode === 'citizen' ? 'anon' : 'public'} name=${s.meta.me.realName} size=${44} />
+    <${Avatar} kind=${s.mode === 'citizen' ? (s.meta.me.showName ? 'citizen' : 'anon') : 'public'} name=${s.mode === 'citizen' ? s.meta.me.handle : s.meta.me.realName} size=${44} />
     <a class="postbox-input" href="#/new">${placeholder}</a>
     ${s.mode === 'citizen' ? html`<a class="postbox-cam" href="#/new?camera=1" aria-label="Report with camera"><${Icon} n="camera" s=${28} /></a>` : null}
   </div>`;

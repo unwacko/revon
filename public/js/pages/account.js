@@ -95,7 +95,7 @@ export function Onboarding() {
         <div class="kv"><span>Name</span><b>${me.realName}</b></div>
         <div class="kv"><span>Verified via</span><b class="verified-by">DigiLocker <span class="verified" title="Verified"><${Icon} n="check" s=${12} w=${3} /></span></b></div>
         <div class="kv"><span>Public identity</span><b>${me.handle}</b></div>
-        <p class="dim small">Other citizens only see your anonymous handle, your area and your posts. Your name is never shown unless you are assigned a public position.</p>
+        <p class="dim small">By default other citizens only see your anonymous handle, your area and your posts. You can choose to show your name and photo later in Settings → Privacy.</p>
       </section>
       <h3 class="h3">Your assigned area</h3>
       <section class="card pad">
@@ -175,12 +175,12 @@ export function Me() {
   return html`
     <${Header} title=${me.handle} right=${html`<a class="icon-btn" href="#/settings" aria-label="Settings"><${Icon} n="settings" /></a>`} />
     <section class="profile">
-      <div class="profile-top"><${Avatar} kind="anon" size=${72} />
+      <div class="profile-top"><${Avatar} kind=${me.showName ? 'citizen' : 'anon'} name=${me.handle} size=${72} />
         <div class="profile-stats"><div><b>${posts.data?.length ?? '—'}</b><span>posts</span></div><div><b>${me.following.positions.length}</b><span>positions</span></div><div><b>${me.following.users.length}</b><span>citizens</span></div></div>
       </div>
       <div class="profile-name">${me.handle} <span class="verified" title="DigiLocker verified"><${Icon} n="check" s=${12} w=${3} /></span></div>
-      <div class="profile-sub"><a href=${'#/region/' + me.regionId}>${regionName(me.regionId)}</a> · others see you as anonymous</div>
-      ${me.realName ? html`<div class="dim small">Only you see: ${me.realName}</div>` : null}
+      <div class="profile-sub"><a href=${'#/region/' + me.regionId}>${regionName(me.regionId)}</a> · ${me.showName ? 'showing your name' : 'others see you as anonymous'}</div>
+      ${me.realName && !me.showName ? html`<div class="dim small">Only you see: ${me.realName}</div>` : null}
     </section>
     <section class="card pad profile-actions"><a class="row" href="#/settings"><${Icon} n="settings" s=${24} /><div class="row-main">Settings</div><${Icon} n="chev" /></a><button class="row as-btn" onClick=${switchView}><${Icon} n="swap" s=${24} /><div class="row-main">${s.mode === 'citizen' ? 'Switch to official view' : 'Switch to citizen view'}</div></button><button class="row as-btn danger" onClick=${logout}><${Icon} n="logout" s=${24} /><div class="row-main">Log out</div></button></section>
     ${me.following.positions.length ? html`<section class="card pad"><div class="sec-h"><b>Following</b></div>${me.following.positions.map((id) => position(id) && html`<${PositionRow} p=${position(id)} showRegion />`)}</section>` : null}
@@ -195,6 +195,16 @@ const SECTIONS = [
   ['Who can see your content', [['privacy', 'shield', 'Privacy']]],
   ['More info and support', [['roadmap', 'sparkle', "What's coming next"], ['structure', 'tree', 'How India is divided'], ['data', 'chart', 'About the data']]],
 ];
+export function IdentityToggle({ me }) {
+  const [busy, setBusy] = useState(false);
+  const flip = async (e) => { setBusy(true); try { await post('/me/identity', { showName: e.target.checked }); await loadMeta(); } catch { toast('Could not save'); } setBusy(false); };
+  const locked = !!(me.positionIds.length || me.contractorIds.length);
+  return html`<section class="set-card">
+    <label class="set-toggle"><span><b>Show my name and photo</b><br /><small class="dim">${me.showName ? `People see you as “${me.realName}”.` : `Off: people see only “${me.handle}”, your ward and your posts.`}</small></span><input type="checkbox" class="switch" checked=${!!me.showName} disabled=${busy || !me.realName || locked} onChange=${flip} /></label>
+    <p class="dim small">Staying anonymous is the default, and it is your choice. Switch it any time; it applies to your past and future posts. Public roles always show the holder's name.</p>
+  </section>`;
+}
+
 export function Settings({ query = {} }) {
   const s = useStore();
   const sec = query.s || (window.innerWidth >= 900 ? 'account' : null);
@@ -204,7 +214,7 @@ export function Settings({ query = {} }) {
     account: html`<section class="set-card"><div class="kv"><span>Verified via</span><b class="verified-by">DigiLocker <span class="verified" title="Verified"><${Icon} n="check" s=${12} w=${3} /></span></b></div><div class="kv"><span>Public name</span><b>${me.handle}</b></div><div class="kv"><span>Home ward</span><a href=${'#/region/' + me.regionId}>${regionName(me.regionId)}</a></div></section><${ComingSoon} label="Update address via DigiLocker" icon="pin" block />`,
     acting: me.positionIds.length || me.contractorIds.length || me.role === 'admin' ? html`<${ModeSwitch} />` : html`<section class="set-card"><p>You use Revon as a citizen. If you are elected or hired into a position, or join a contractor, you'll be able to switch views here.</p></section>`,
     notifications: html`${['Progress on my problem posts', 'Posts from people I follow', 'Position changes in my ward', 'Election announcements'].map((l) => html`<label class="set-toggle"><span>${l}</span><input type="checkbox" class="switch" checked /></label>`)}<${ComingSoon} label="Push & SMS notifications" icon="bell" block />`,
-    privacy: html`<section class="set-card"><p>Citizens are anonymous. Others see only your ward and your posts. Your name appears only if you are assigned a public position or join a contractor.</p></section><${ComingSoon} label="DigiLocker privacy & no-leak guarantee" icon="shield" block />`,
+    privacy: html`<${IdentityToggle} me=${me} /><${ComingSoon} label="DigiLocker privacy & no-leak guarantee" icon="shield" block />`,
     roadmap: html`<${RoadmapList} />`,
     structure: html`<a class="btn btn-ghost" href="#/structure">Open the explainer ›</a>`,
     data: html`<section class="set-card"><p>Problems, repairs, roads, wards and risk data come from the synthetic “Follow the Rupee: Mumbai Monsoon Roads” dataset (CC BY 4.0). It is not BMC data. Office holders, parties and contractor staff are fictional.</p></section>`,

@@ -13,7 +13,7 @@ const DATA_DIR = process.env.DATA_DIR || path.join(ROOT, 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
 const PORT = Number(process.env.PORT || 3000);
-const SEED_VERSION = 6;
+const SEED_VERSION = 7;
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
@@ -110,6 +110,7 @@ function publicUser(u) {
   const cons = contractorsOf(u.id);
   if (u.role === 'admin') return { id: u.id, kind: 'admin', name: 'Platform Admin', regionId: u.regionId };
   if (held.length || cons.length) return { id: u.id, kind: 'public', name: u.realName, party: u.party || null, regionId: u.regionId, positionIds: held.map((p) => p.id), contractorIds: cons.map((c) => c.id) };
+  if (u.showName && u.realName) return { id: u.id, kind: 'citizen', name: u.realName, regionId: u.regionId };
   return { id: u.id, kind: 'anon', name: anonHandle(u), regionId: u.regionId };
 }
 
@@ -160,7 +161,7 @@ function newSession(userId) {
 function me(u) {
   return {
     id: u.id, role: u.role, realName: u.realName || null, regionId: u.regionId, verified: u.verified, onboarded: u.onboarded,
-    following: u.following, contractorsFollowed: u.contractorsFollowed || [], handle: publicUser(u).name, party: u.party || null,
+    following: u.following, contractorsFollowed: u.contractorsFollowed || [], handle: publicUser(u).name, showName: !!u.showName, party: u.party || null,
     positionIds: positionsHeldBy(u.id).map((p) => p.id), contractorIds: contractorsOf(u.id).map((c) => c.id),
   };
 }
@@ -423,6 +424,8 @@ app.post('/api/me/area', auth, (req, res) => {
   req.user.regionId = req.body.regionId; changed('users', req.user.id);
   res.json(me(req.user));
 });
+// Anonymity is a choice: a citizen can show their verified name and photo, or stay behind their handle.
+app.post('/api/me/identity', auth, (req, res) => { req.user.showName = !!req.body?.showName && !!req.user.realName; changed('users', req.user.id); res.json(me(req.user)); });
 app.post('/api/me/onboarded', auth, (req, res) => { req.user.onboarded = true; changed('users', req.user.id); res.json(me(req.user)); });
 
 app.post('/api/follow', auth, (req, res) => {
@@ -881,6 +884,9 @@ app.post('/api/projects/:id/bids', auth, (req, res) => {
 app.post('/api/projects/:id/award', auth, (req, res) => {
   const pj = PROJ(req.params.id); const pos = POS(pj?.positionId); const c = CON(req.body?.contractorId);
   if (!pj || !c || pos?.holderUserId !== req.user.id) return res.status(403).json({ error: 'Only the responsible position can award' });
+  const reason = String(req.body?.reason || '').trim();
+  if (reason.length < 20) return res.status(400).json({ error: 'Explain publicly why this contractor won (at least 20 characters)' });
+  pj.awardReason = reason.slice(0, 1000); pj.awardedAt = Date.now();
   pj.contractorId = c.id; pj.status = 'in_progress'; pj.startDate = Date.now(); pj.approvedByUserId = req.user.id; pj.approvedByPositionId = pos.id;
   notify(c.memberUserIds, `You won the bid for "${pj.title}"`, `#/project/${pj.id}`, 'project');
   notify(pj.linkedProblemIds.map((id) => POST(id)?.authorId), `Contractor ${c.name} assigned to fix "${pj.title}"`, `#/project/${pj.id}`, 'project');

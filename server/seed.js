@@ -37,6 +37,7 @@ export const wardRegionId = (code) => 'w_' + code.replace('/', '-');
 const FIRST = ['Aarti', 'Rajesh', 'Sunita', 'Vikram', 'Meenal', 'Sachin', 'Farah', 'Nitin', 'Kavita', 'Anil', 'Shraddha', 'Manoj', 'Pallavi', 'Imran', 'Deepa', 'Rohit', 'Swati', 'Ganesh', 'Neelam', 'Prakash', 'Rekha', 'Tushar', 'Ayesha', 'Hemant', 'Varsha', 'Sameer', 'Jyoti', 'Kiran', 'Mohan', 'Anjali', 'Yogesh', 'Leena', 'Suresh', 'Madhuri', 'Rahul', 'Bhavna'];
 const LAST = ['Naik', 'Sawant', 'Kulkarni', 'Shaikh', 'Pednekar', 'Iyer', 'Gaikwad', 'Mhatre', 'Fernandes', 'Desai', 'Patil', 'Khan', 'Rane', 'Joshi', 'Menon', 'Parab', 'Bhosale', 'Chavan', 'Pillai', 'Shetty', 'Mehta', 'Kamat', 'Thakur', 'Ansari', 'Jadhav', 'Salvi', 'Nair', 'Dalvi', 'Bhatia', 'Gupte'];
 const PARTIES = ['Bharat Pragati Party', 'Lok Vikas Aghadi', 'Jan Shakti Dal', 'Mumbai Nagrik Manch', 'Independent'];
+const choosesName = (id) => [...id].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7) % 100 < 50;
 let nameI = 0;
 const nextName = (suffix = '') => { const i = nameI++; return `${FIRST[(i * 7) % FIRST.length]} ${LAST[(i * 11 + 3) % LAST.length]}${suffix}`; };
 
@@ -200,7 +201,7 @@ export function buildSeed() {
     const translated = translate(c.description);
     const regionId = code ? wardRegionId(code) : 'r_bmc';
     const uid = 'u_' + c.complainant_id;
-    users.push({ id: uid, role: 'citizen', verified: true, onboarded: true, anonHandle: 'Citizen ' + c.complainant_id.slice(-5), regionId, following: { positions: [], users: [], regions: [] }, createdAt: ist(c.received_at) - 30 * 864e5 });
+    users.push({ id: uid, role: 'citizen', verified: true, onboarded: true, anonHandle: 'Citizen ' + c.complainant_id.slice(-5), ...(choosesName(uid) ? { realName: nextName(), showName: true } : {}), regionId, following: { positions: [], users: [], regions: [] }, createdAt: ist(c.received_at) - 30 * 864e5 });
     posts.push({
       id: c.complaint_id, authorId: uid, actingAs: { type: 'citizen' }, tag: 'problem',
       title: `${titleCat[category] || category} — ${where}`, body: english(translated || c.description, `${titleCat[category] || category} reported at ${where}.`), originalLanguage: translated ? ({ 'hi-en': 'Hinglish', hi: 'Hindi', mr: 'Marathi' }[c.language] || 'Hindi') : null, photoNote: c.photo_description || null, images: [],
@@ -235,7 +236,7 @@ export function buildSeed() {
   for (const s of social) {
     const loc = findLocality(s.text);
     const uid = 'u_s_' + s.author_handle.replace(/[^a-z0-9]/gi, '');
-    if (!users.some((u) => u.id === uid)) users.push({ id: uid, role: 'citizen', verified: true, onboarded: true, anonHandle: 'Citizen ' + uid.slice(-5).toUpperCase(), regionId: loc ? wardRegionId(loc.ward_code) : 'r_bmc', following: { positions: [], users: [], regions: [] }, createdAt: ist(s.posted_at) - 30 * 864e5 });
+    if (!users.some((u) => u.id === uid)) users.push({ id: uid, role: 'citizen', verified: true, onboarded: true, anonHandle: 'Citizen ' + uid.slice(-5).toUpperCase(), ...(choosesName(uid) ? { realName: nextName(), showName: true } : {}), regionId: loc ? wardRegionId(loc.ward_code) : 'r_bmc', following: { positions: [], users: [], regions: [] }, createdAt: ist(s.posted_at) - 30 * 864e5 });
     const englishText = translate(s.text);
     const text = english(englishText || s.text, loc ? `Post about ${loc.locality}.` : 'Post from a Mumbai citizen.');
     const firstLine = text.split(/[.!?\n]/)[0].trim();
@@ -267,9 +268,11 @@ export function buildSeed() {
   const projects = [];
   const kwRoad = roadById[topRoad('K/W')], fsRoad = roadById[topRoad('F/S')];
   const kwCons = contractors.filter((c) => c.regionIds.includes(wardRegionId('K/W')));
+  const kwBidders = [...kwCons, ...contractors.filter((c) => !kwCons.includes(c))].slice(0, 4);
+  for (const c of kwBidders) if (!c.regionIds.includes(wardRegionId('K/W'))) c.regionIds.push(wardRegionId('K/W'));
   const openOn = (rid) => posts.filter((p) => p.tag === 'problem' && p.roadId === rid && ['open', 'in_progress'].includes(p.status)).map((p) => p.id).slice(0, 12);
-  if (kwRoad) projects.push({ id: 'pj_1', title: `Post-monsoon mastic resurfacing — ${kwRoad.name} (segment ${kwRoad.segment})`, description: `Full-width mastic asphalt resurfacing of ${kwRoad.lengthM} m to stop repeat pothole patching on this stretch.`, category: 'Pothole', regionId: kwRoad.regionId, roadId: kwRoad.id, positionId: 'p_eer_kw', approvedByPositionId: 'p_amc_kw', approvedByUserId: P.p_amc_kw.holderUserId, contractorId: null, budget: 0.42, spent: 0, status: 'bidding', linkedProblemIds: openOn(kwRoad.id), bids: kwCons.slice(0, 3).map((c, i) => ({ contractorId: c.id, amount: [0.39, 0.36, 0.44][i], timelineDays: [21, 30, 18][i], note: ['Night work only', 'Includes 3-year defect liability', 'Fastest timeline'][i], at: now - (3 - i) * 864e5 })), startDate: null, endDate: null, createdAt: now - 5 * 864e5 });
-  if (fsRoad) projects.push({ id: 'pj_2', title: `Hindmata area drain widening near ${fsRoad.name}`, description: 'Widen the storm-water drain and add a holding pump to cut waterlogging time at a chronic flood hotspot.', category: 'Waterlogging', regionId: fsRoad.regionId, roadId: fsRoad.id, positionId: 'p_swd_fs', approvedByPositionId: 'p_ce_swd', approvedByUserId: P.p_ce_swd.holderUserId, contractorId: contractors[3].id, budget: 1.8, spent: 0.55, status: 'in_progress', linkedProblemIds: openOn(fsRoad.id), bids: [{ contractorId: contractors[3].id, amount: 1.8, timelineDays: 120, note: '', at: now - 40 * 864e5 }], startDate: now - 20 * 864e5, endDate: null, createdAt: now - 45 * 864e5 });
+  if (kwRoad) projects.push({ id: 'pj_1', title: `Post-monsoon mastic resurfacing — ${kwRoad.name} (segment ${kwRoad.segment})`, description: `Full-width mastic asphalt resurfacing of ${kwRoad.lengthM} m to stop repeat pothole patching on this stretch.`, category: 'Pothole', regionId: kwRoad.regionId, roadId: kwRoad.id, positionId: 'p_eer_kw', approvedByPositionId: 'p_amc_kw', approvedByUserId: P.p_amc_kw.holderUserId, contractorId: null, budget: 0.42, spent: 0, status: 'bidding', linkedProblemIds: openOn(kwRoad.id), bids: kwBidders.map((c, i) => ({ contractorId: c.id, amount: [0.39, 0.36, 0.44, 0.41][i], timelineDays: [21, 30, 18, 25][i], note: ['Night work only, no daytime lane closures', 'Includes 3-year defect liability', 'Fastest timeline, two crews', 'Mastic asphalt with full milling'][i], at: now - (4 - i) * 864e5 })), startDate: null, endDate: null, createdAt: now - 5 * 864e5 });
+  if (fsRoad) projects.push({ id: 'pj_2', title: `Hindmata area drain widening near ${fsRoad.name}`, description: 'Widen the storm-water drain and add a holding pump to cut waterlogging time at a chronic flood hotspot.', category: 'Waterlogging', regionId: fsRoad.regionId, roadId: fsRoad.id, positionId: 'p_swd_fs', approvedByPositionId: 'p_ce_swd', approvedByUserId: P.p_ce_swd.holderUserId, contractorId: contractors[3].id, budget: 1.8, spent: 0.55, status: 'in_progress', linkedProblemIds: openOn(fsRoad.id), bids: [{ contractorId: contractors[3].id, amount: 1.8, timelineDays: 120, note: 'Includes holding pump and desilting', at: now - 40 * 864e5 }, { contractorId: contractors[6].id, amount: 1.62, timelineDays: 150, note: 'Pump supplied separately', at: now - 41 * 864e5 }, { contractorId: contractors[7].id, amount: 1.95, timelineDays: 110, note: 'Fastest timeline', at: now - 42 * 864e5 }], awardReason: 'Not the lowest bid. The lowest bid needs 150 days, which runs past the June monsoon onset, and leaves the pump out of scope. Western Coast Asphalt Co finishes in 120 days, includes the holding pump and desilting, and stays within the allocated budget.', awardedAt: now - 21 * 864e5, startDate: now - 20 * 864e5, endDate: null, createdAt: now - 45 * 864e5 });
 
   // pj_3: an awarded K/W drain project. Three bids, the winner and the public reason for the choice.
   const kwDrainRoad = (() => {
