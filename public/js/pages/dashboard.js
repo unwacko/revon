@@ -1,5 +1,5 @@
-import { html, useState, useEffect, store, useStore, api, post, useData, go, toast, region, position, contractor, person, chain, positionsIn, setMode, inr, ago, M, STATUS } from '../lib.js';
-import { Header, Icon, Avatar, Tabs, PostCard, PositionRow, ContractorRow, ProjectRow, Loading, Empty, ErrorBox, StatusPill, Sheet, TagPill, ComingSoon } from '../components.js';
+import { html, useState, useEffect, store, useStore, api, post, useData, go, toast, region, position, contractor, person, chain, positionsIn, setMode, inr, rs, ago, fmtNum, M, STATUS, regionName } from '../lib.js';
+import { Header, Icon, Avatar, Tabs, PostCard, PositionRow, ContractorRow, ProjectRow, Loading, Empty, ErrorBox, StatusPill, Sheet, TagPill, ComingSoon, MoneyPanel, PlannerPanel, ScorecardPanel } from '../components.js';
 
 export function Dashboard({ query }) {
   const s = useStore();
@@ -17,40 +17,44 @@ export function ModeSwitch() {
   const opts = [['citizen', 'Citizen view', 'Browse, post problems, upvote'], ...me.positionIds.map((id) => ['position:' + id, position(id).title, region(position(id).regionId).name]), ...me.contractorIds.map((id) => ['contractor:' + id, contractor(id).name, 'Contractor']), ...(me.role === 'admin' ? [['admin', 'Platform admin', 'Assign positions & contractors']] : [])];
   if (opts.length < 2) return null;
   return html`<section class="card pad"><div class="sec-h"><b>Acting as</b><${Icon} n="swap" s=${18} /></div>
-    ${opts.map(([k, t, sub]) => html`<button class=${'mode-opt' + (s.mode === k ? ' on' : '')} onClick=${() => { setMode(k); toast('Switched to ' + t); go(k === 'citizen' ? '#/' : '#/dashboard'); }}><div><b>${t}</b><div class="muted small">${sub}</div></div>${s.mode === k ? html`<${Icon} n="check" />` : null}</button>`)}
+    ${opts.map(([k, t, sub]) => html`<button class=${'mode-opt' + (s.mode === k ? ' on' : '')} onClick=${() => { setMode(k); toast('Switched to ' + t); go(k === 'citizen' ? '#/' : '#/dashboard'); }}><div><b>${t}</b><div class="dim small">${sub}</div></div>${s.mode === k ? html`<${Icon} n="check" />` : null}</button>`)}
   </section>`;
 }
 
 // ---------------- Position dashboard ----------------
 function PositionDashboard({ id, query }) {
-  const { data, error, loading } = useData(() => api('/dashboard/position/' + id), [id]);
   const [tab, setTab] = useState('problems');
   const [filter, setFilter] = useState('all');
+  const { data, error, loading } = useData(() => api(`/dashboard/position/${id}?filter=${filter}`), [id, filter]);
+  const money = useData(() => (tab === 'money' ? api('/money/' + position(id).regionId) : Promise.resolve(null)), [id, tab]);
+  const plan = useData(() => (tab === 'plan' ? api('/planner/' + position(id).regionId) : Promise.resolve(null)), [id, tab]);
   const [sel, setSel] = useState([]);
   const [projOpen, setProjOpen] = useState(!!query.newProject);
   const p = position(id);
   if (loading) return html`<${Header} title="Dashboard" /><${Loading} />`;
   if (error) return html`<${Header} title="Dashboard" /><${ErrorBox} error=${error} />`;
   const { counts, problems, projects } = data;
-  const list = problems.filter((x) => filter === 'all' || (filter === 'unviewed' && !x.viewed) || (filter === 'unresponded' && !x.responded && x.status !== 'resolved') || (filter === 'mine' && x.assignedToMe));
+  const list = problems;
   const toggle = (pid) => setSel((x) => (x.includes(pid) ? x.filter((y) => y !== pid) : [...x, pid]));
   return html`
-    <${Header} title=${p.title} sub=${region(p.regionId).name + ' · official dashboard'} right=${html`<button class="btn btn-ghost btn-sm" onClick=${() => { setMode('citizen'); go('#/'); }}>Citizen view</button>`} />
+    <${Header} title=${p.title} sub=${regionName(p.regionId) + ' · official dashboard'} right=${html`<button class="btn btn-ghost btn-sm mobile-only" onClick=${() => { setMode('citizen'); go('#/'); }}>Citizen view</button>`} />
     <div class="kpis">
       <button class=${'kpi warn' + (filter === 'unviewed' ? ' on' : '')} onClick=${() => { setTab('problems'); setFilter('unviewed'); }}><b>${counts.unviewed}</b><span>Unviewed</span></button>
       <button class=${'kpi danger' + (filter === 'unresponded' ? ' on' : '')} onClick=${() => { setTab('problems'); setFilter('unresponded'); }}><b>${counts.unresponded}</b><span>Need response</span></button>
-      <button class=${'kpi' + (filter === 'all' ? ' on' : '')} onClick=${() => { setTab('problems'); setFilter('all'); }}><b>${counts.total}</b><span>Total problems</span></button>
+      <button class=${'kpi' + (filter === 'all' ? ' on' : '')} onClick=${() => { setTab('problems'); setFilter('all'); }}><b>${fmtNum(counts.open)}</b><span>Open problems</span></button>
       <div class="kpi ok"><b>${counts.resolved}</b><span>Resolved</span></div>
     </div>
-    <${Tabs} value=${tab} onChange=${setTab} tabs=${[['problems', 'Ranked problems'], ['projects', 'Projects', projects.length || null], ['contractors', 'Contractors'], ['budget', 'Budget']]} />
+    <${Tabs} value=${tab} onChange=${setTab} tabs=${[['problems', 'Ranked problems'], ['money', 'Money'], ['plan', 'Next rupee'], ['projects', 'Projects', projects.length || null], ['contractors', 'Contractors'], ['budget', 'Budget']]} />
+    ${tab === 'money' ? (money.loading ? html`<${Loading} />` : html`<${MoneyPanel} m=${money.data} regionId=${p.regionId} />`) : null}
+    ${tab === 'plan' ? (plan.loading ? html`<${Loading} />` : html`<${PlannerPanel} data=${plan.data} />`) : null}
     ${tab === 'problems' ? html`
       <div class="chips pad-x">${[['all', 'All'], ['mine', 'Assigned to me'], ['unviewed', 'Unviewed'], ['unresponded', 'Unresponded']].map(([k, l]) => html`<button class=${'chip-btn' + (filter === k ? ' on' : '')} onClick=${() => setFilter(k)}>${l}</button>`)}</div>
-      <div class="muted small pad-x">Ranked by upvotes, comments and recency (Reddit-style hot score). Select several to send one update to all.</div>
+      <div class="dim small pad-x">Ranked by upvotes, comments and recency (Reddit-style hot score). Road problems rank above other issues. Select several to send one update to all.</div>
       ${list.length ? list.map((x, i) => html`<div class=${'dash-item' + (!x.viewed ? ' unviewed' : '')}>
         <label class="dash-check" aria-label="Select"><input type="checkbox" checked=${sel.includes(x.id)} onChange=${() => toggle(x.id)} /><span class="rank">#${i + 1}</span></label>
         <a class="dash-main" href=${'#/post/' + x.id}>
           <div class="row-t">${x.title}</div>
-          <div class="row-s">▲ ${x.upvoteCount} · 💬 ${x.commentCount} · ${x.regionName} · ${ago(x.createdAt)}</div>
+          <div class="row-s">▲ ${x.upvoteCount} · 💬 ${x.commentCount} · ${x.regionName} · ${ago(x.createdAt)}${x.road ? ' · ' + x.road.name : ''}</div>
           <div class="chips"><${StatusPill} status=${x.status} />${!x.viewed ? html`<span class="flag-new">New</span>` : null}${!x.responded && x.status !== 'resolved' ? html`<span class="flag-due">No response</span>` : null}${x.assignedToMe ? html`<span class="chip">Assigned to you</span>` : null}</div>
         </a>
       </div>`) : html`<${Empty}>Nothing here — good work.</${Empty}>`}
@@ -111,7 +115,7 @@ function RegisterContractorSheet({ open, onClose, positionId }) {
     <label class="field"><span>Type</span><select value=${f.type} onChange=${(e) => setF({ ...f, type: e.target.value })}><option value="company">Company</option><option value="group">Group of citizens</option><option value="individual">Individual</option></select></label>
     <div class="field"><span>Specialties</span><div class="chips">${M().categories.map((c) => html`<button type="button" class=${'chip-btn' + (f.specialties.includes(c) ? ' on' : '')} onClick=${() => setF({ ...f, specialties: f.specialties.includes(c) ? f.specialties.filter((x) => x !== c) : [...f.specialties, c] })}>${c}</button>`)}</div></div>
     ${isAdmin ? html`<label class="field"><span>Add members (search verified citizens)</span><input value=${q} onInput=${(e) => setQ(e.target.value)} placeholder="Name" /></label>
-      ${(users.data || []).map((u) => html`<button type="button" class="pick" onClick=${() => !f.members.some((m) => m.id === u.id) && setF({ ...f, members: [...f.members, u] })}>${u.realName} <span class="muted small">${region(u.regionId)?.name}</span></button>`)}` : html`<div class="muted small">Member lookup by DigiLocker ID is admin-only in the prototype; you will be added as the first member for testing.</div>`}
+      ${(users.data || []).map((u) => html`<button type="button" class="pick" onClick=${() => !f.members.some((m) => m.id === u.id) && setF({ ...f, members: [...f.members, u] })}>${u.realName} <span class="dim small">${region(u.regionId)?.name}</span></button>`)}` : html`<div class="dim small">Member lookup by DigiLocker ID is admin-only in the prototype; you will be added as the first member for testing.</div>`}
     ${f.members.length ? html`<div class="chips">${f.members.map((m) => html`<span class="chip">${m.realName}</span>`)}</div>` : null}
     <button class="btn btn-primary btn-block" onClick=${() => { if (!isAdmin && !f.members.length) f.members.push({ id: store.meta.me.id, realName: 'You' }); }}>Register</button>
   </form></${Sheet}>`;
@@ -124,11 +128,12 @@ function ContractorDashboard({ id }) {
   const mine = M().projects.filter((pj) => pj.contractorId === id);
   const open = M().projects.filter((pj) => pj.status === 'bidding' && c.regionIds.some((r) => chain(pj.regionId).some((x) => x.id === r)));
   return html`
-    <${Header} title=${c.name} sub="Contractor dashboard" right=${html`<button class="btn btn-ghost btn-sm" onClick=${() => { setMode('citizen'); go('#/'); }}>Citizen view</button>`} />
+    <${Header} title=${c.name} sub="Contractor dashboard" right=${html`<button class="btn btn-ghost btn-sm mobile-only" onClick=${() => { setMode('citizen'); go('#/'); }}>Citizen view</button>`} />
     <div class="kpis"><div class="kpi"><b>${mine.filter((x) => x.status === 'in_progress').length}</b><span>Active</span></div><div class="kpi ok"><b>${mine.filter((x) => x.status === 'completed').length}</b><span>Completed</span></div><div class="kpi warn"><b>${open.length}</b><span>Open for bids</span></div><div class="kpi"><b>${inr(mine.reduce((a, x) => a + x.budget, 0))}</b><span>Awarded</span></div></div>
+    <${ContractorScore} id=${id} />
     <section class="card pad"><div class="sec-h"><b>Assigned by</b></div>${c.assignedBy.map((a) => html`<${PositionRow} p=${position(a.positionId)} showRegion right=${null} />`)}</section>
-    <section class="card pad"><div class="sec-h"><b>Your projects</b></div>${mine.length ? mine.map((pj) => html`<div><${ProjectRow} pj=${pj} />${pj.status === 'in_progress' ? html`<a class="btn btn-progress btn-sm" href=${`#/new?tag=progress&project=${pj.id}&link=${pj.linkedProblemIds.join(',')}`}>Post site update</a>` : null}</div>`) : html`<div class="muted small">No projects yet.</div>`}</section>
-    <section class="card pad"><div class="sec-h"><b>Open for bidding in your areas</b></div>${open.length ? open.map((pj) => html`<${ProjectRow} pj=${pj} />`) : html`<div class="muted small">No open tenders.</div>`}</section>
+    <section class="card pad"><div class="sec-h"><b>Your projects</b></div>${mine.length ? mine.map((pj) => html`<div><${ProjectRow} pj=${pj} />${pj.status === 'in_progress' ? html`<a class="btn btn-progress btn-sm" href=${`#/new?tag=progress&project=${pj.id}&link=${pj.linkedProblemIds.join(',')}`}>Post site update</a>` : null}</div>`) : html`<div class="dim small">No projects yet.</div>`}</section>
+    <section class="card pad"><div class="sec-h"><b>Open for bidding in your areas</b></div>${open.length ? open.map((pj) => html`<${ProjectRow} pj=${pj} />`) : html`<div class="dim small">No open tenders.</div>`}</section>
     <section class="card pad"><a class="row" href=${'#/contractor/' + id}><${Icon} n="user" /><div class="row-main">View public contractor profile</div></a><a class="row" href="#/settings"><${Icon} n="settings" /><div class="row-main">Settings</div></a></section>`;
 }
 
@@ -141,12 +146,12 @@ function AdminPage() {
     ${tab === 'assign' ? html`<${AssignPeople} />` : null}
     ${tab === 'contractors' ? html`<${AdminContractors} />` : null}
     ${tab === 'log' ? html`<${AssignmentLog} />` : null}
-    ${tab === 'bots' ? html`<section class="card pad"><div class="sec-h"><b>Moderation & AI layer</b></div><p class="muted small">Planned: verify post tags, block promotional / vulgar / unconstitutional content, and detect accountable positions from problem posts.</p>
+    ${tab === 'bots' ? html`<section class="card pad"><div class="sec-h"><b>Moderation & AI layer</b></div><p class="dim small">Planned: verify post tags, block promotional / vulgar / unconstitutional content, and detect accountable positions from problem posts.</p>
       <div class="btn-col"><${ComingSoon} label="Tag verification bot" block /><${ComingSoon} label="Content policy bot" icon="shield" block /><${ComingSoon} label="AI responsibility detection" icon="sparkle" block /></div></section>` : null}`;
 }
 
 function AssignPeople() {
-  const [regionId, setRegionId] = useState('r_w_kothrud');
+  const [regionId, setRegionId] = useState('w_K-W');
   const [pick, setPick] = useState(null);
   const [q, setQ] = useState('');
   const [party, setParty] = useState('');
@@ -158,7 +163,7 @@ function AssignPeople() {
     <a class="btn btn-ghost btn-block" href=${'#/region/' + regionId}>Edit positions on area page</a>
   </section>
   <${Sheet} open=${!!pick} title=${'Assign: ' + (pick?.title || '')} onClose=${() => setPick(null)}>
-    <p class="muted small">Search verified citizens (admins see real names; the public sees names only once a position is assigned).</p>
+    <p class="dim small">Search verified citizens (admins see real names; the public sees names only once a position is assigned).</p>
     <input class="input" placeholder="Search by name" value=${q} onInput=${(e) => setQ(e.target.value)} />
     ${pick?.kind === 'elected' ? html`<label class="field"><span>Party (shown small on profile)</span><input value=${party} onInput=${(e) => setParty(e.target.value)} placeholder="Independent" /></label>` : null}
     ${(users.data || []).map((u) => html`<button class="row as-btn" onClick=${() => assign(u.id)}><${Avatar} name=${u.realName} size=${36} /><div class="row-main"><div class="row-t">${u.realName}</div><div class="row-s">${u.handle} · ${region(u.regionId)?.name}</div></div><span class="btn btn-sm btn-primary">Assign</span></button>`)}
@@ -176,4 +181,10 @@ function AssignmentLog() {
   if (loading) return html`<${Loading} />`;
   return html`<section class="list">${data.map((x) => html`<a class="card pad" href=${'#/post/' + x.id}><div class="row-t">${x.title}</div><div class="row-s">${x.regionName}</div>
     ${x.responsible.map((r) => html`<div class="kv small"><span>${r.title}</span><span class=${'src src-' + r.assignedBy}>${r.assignedBy === 'rules' ? 'Auto (rules) · AI soon' : r.assignedBy === 'person' ? 'Official: ' + (r.assignedByName || '') : 'Chosen by poster'}</span></div>`)}</a>`)}</section>`;
+}
+
+function ContractorScore({ id }) {
+  const { data, loading } = useData(() => api(`/contractors/${id}/scorecard`), [id]);
+  if (loading) return html`<${Loading} />`;
+  return html`<${ScorecardPanel} sc=${data} name="your monsoon 2025 work" />`;
 }

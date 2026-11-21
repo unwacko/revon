@@ -3,7 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { buildSeed, LEVELS, CATEGORIES } from './seed.js';
+import { buildSeed, LEVELS, CATEGORIES, ROAD_CATS, DRAIN_CATS } from './seed.js';
+import { audit, money, contractorScorecard, wardScorecard, planner, roadInfo, ref, FLAG_LABELS } from './analytics.js';
+import { inPolygon, km } from './geo.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -11,17 +13,22 @@ const DATA_DIR = process.env.DATA_DIR || path.join(ROOT, 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
 const PORT = Number(process.env.PORT || 3000);
+const SEED_VERSION = 4;
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-// ---------------- Persistence (JSON file; swap for Postgres when moving to cloud) ----------------
-let db;
-if (process.argv.includes('--reset') || !fs.existsSync(DB_FILE)) {
-  db = buildSeed();
-  fs.writeFileSync(DB_FILE, JSON.stringify(db));
-  console.log('Seeded database at', DB_FILE);
-} else {
+// ---------------- Persistence (JSON file; swap for Postgres when moving to the cloud) ----------------
+let db = null;
+if (!process.argv.includes('--reset') && fs.existsSync(DB_FILE)) {
   db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+  if (db.version !== SEED_VERSION) db = null;
+}
+if (!db) {
+  console.time('seed');
+  db = buildSeed(); db.version = SEED_VERSION;
+  fs.writeFileSync(DB_FILE, JSON.stringify(db));
+  console.timeEnd('seed');
+  console.log('Seeded database at', DB_FILE);
 }
 let saveTimer = null;
 function save() {
@@ -30,97 +37,106 @@ function save() {
     const tmp = DB_FILE + '.tmp';
     fs.writeFileSync(tmp, JSON.stringify(db));
     fs.renameSync(tmp, DB_FILE);
-  }, 150);
+  }, 400);
 }
+
+// ---------------- Indexes ----------------
+const ix = {};
+function reindex() {
+  for (const k of ['regions', 'positions', 'users', 'contractors', 'posts', 'projects', 'roads', 'workOrders']) ix[k] = new Map(db[k].map((x) => [x.id, x]));
+  ix.children = new Map();
+  for (const r of db.regions) { if (!ix.children.has(r.parentId)) ix.children.set(r.parentId, []); ix.children.get(r.parentId).push(r.id); }
+  ix.chain = new Map();
+  ix.progressByProblem = new Map();
+  for (const p of db.posts) if (p.tag === 'progress') for (const id of p.linkedProblemIds) { if (!ix.progressByProblem.has(id)) ix.progressByProblem.set(id, []); ix.progressByProblem.get(id).push(p.id); }
+  ix.commentCount = new Map();
+  for (const c of db.comments) ix.commentCount.set(c.postId, (ix.commentCount.get(c.postId) || 0) + 1);
+  ix.held = new Map();
+  for (const p of db.positions) if (p.holderUserId) { if (!ix.held.has(p.holderUserId)) ix.held.set(p.holderUserId, []); ix.held.get(p.holderUserId).push(p); }
+  ix.memberOf = new Map();
+  for (const c of db.contractors) for (const u of c.memberUserIds) { if (!ix.memberOf.has(u)) ix.memberOf.set(u, []); ix.memberOf.get(u).push(c); }
+  ix.money = new Map();
+}
+audit(db);
+reindex();
 
 // ---------------- Live sync (Server-Sent Events) ----------------
 const clients = new Set();
-function broadcast(entity, id) {
+function changed(entity, id) {
+  save();
+  if (['positions', 'contractors', 'regions'].includes(entity)) reindex();
   const msg = `data: ${JSON.stringify({ entity, id, at: Date.now() })}\n\n`;
   for (const res of clients) res.write(msg);
 }
-function changed(entity, id) { save(); broadcast(entity, id); }
 
 // ---------------- Helpers ----------------
-const byId = (arr, id) => arr.find((x) => x.id === id);
-const R = (id) => byId(db.regions, id);
-const POS = (id) => byId(db.positions, id);
-const USER = (id) => byId(db.users, id);
-const CON = (id) => byId(db.contractors, id);
-const PROJ = (id) => byId(db.projects, id);
-const POST = (id) => byId(db.posts, id);
+const R = (id) => ix.regions.get(id);
+const POS = (id) => ix.positions.get(id);
+const USER = (id) => ix.users.get(id);
+const CON = (id) => ix.contractors.get(id);
+const PROJ = (id) => ix.projects.get(id);
+const POST = (id) => ix.posts.get(id);
+const ROAD = (id) => ix.roads.get(id);
+const WO = (id) => ix.workOrders.get(id);
 const nextId = (kind, prefix) => `${prefix}_${++db.counters[kind]}`;
 const depth = (regionId) => LEVELS[R(regionId)?.type]?.depth ?? 9;
+const add = (kind, item) => { db[kind].push(item); ix[kind]?.set(item.id, item); };
 
 function chain(regionId) {
+  if (ix.chain.has(regionId)) return ix.chain.get(regionId);
   const out = [];
   let r = R(regionId);
   while (r) { out.push(r.id); r = R(r.parentId); }
-  return out; // [self, parent, ..., nation]
+  ix.chain.set(regionId, out);
+  return out;
 }
 function subtree(regionId) {
   const out = [regionId];
-  for (let i = 0; i < out.length; i++) for (const r of db.regions) if (r.parentId === out[i]) out.push(r.id);
+  for (let i = 0; i < out.length; i++) out.push(...(ix.children.get(out[i]) || []));
   return out;
 }
+const wardsUnder = (regionId) => subtree(regionId).filter((id) => R(id)?.type === 'ward');
 const inSubtree = (regionId, ancestorId) => chain(regionId).includes(ancestorId);
-const positionsHeldBy = (userId) => db.positions.filter((p) => p.holderUserId === userId);
-const contractorsOf = (userId) => db.contractors.filter((c) => c.memberUserIds.includes(userId));
-const anonHandle = (u) => 'Citizen ' + crypto.createHash('sha1').update(u.id).digest('hex').slice(0, 5).toUpperCase();
+const positionsHeldBy = (userId) => ix.held.get(userId) || [];
+const contractorsOf = (userId) => ix.memberOf.get(userId) || [];
+const anonHandle = (u) => u.anonHandle || 'Citizen ' + crypto.createHash('sha1').update(u.id).digest('hex').slice(0, 5).toUpperCase();
+const upCount = (p) => (p.upvoteBase || 0) + p.upvotes.length;
+const conName = (id) => CON(id)?.name || 'Unknown';
+const moneyFor = (regionId) => { if (!ix.money.has(regionId)) ix.money.set(regionId, money(db, wardsUnder(regionId), conName)); return ix.money.get(regionId); };
 
-// Public view of a person. Plain citizens stay anonymous.
 function publicUser(u) {
   if (!u) return null;
   const held = positionsHeldBy(u.id);
   const cons = contractorsOf(u.id);
   if (u.role === 'admin') return { id: u.id, kind: 'admin', name: 'Platform Admin', regionId: u.regionId };
-  if (held.length || cons.length) {
-    return { id: u.id, kind: 'public', name: u.realName, party: u.party || null, regionId: u.regionId, positionIds: held.map((p) => p.id), contractorIds: cons.map((c) => c.id) };
-  }
+  if (held.length || cons.length) return { id: u.id, kind: 'public', name: u.realName, party: u.party || null, regionId: u.regionId, positionIds: held.map((p) => p.id), contractorIds: cons.map((c) => c.id) };
   return { id: u.id, kind: 'anon', name: anonHandle(u), regionId: u.regionId };
 }
 
 function suggestResponsible(regionId, category) {
-  // Rule-based stand-in for the future AI layer: walk up from the post's area and
-  // pick the lowest-level positions whose remit covers the category.
-  // Prefers: the area's head, then specialists (narrow remit) nearest first.
+  // Rule-based stand-in for the future AI layer: the area's head, then the
+  // department positions whose remit covers the category, nearest first.
   const out = [];
   const covers = (p) => p.categories.includes(category);
   chain(regionId).forEach((rid, level) => {
     const here = db.positions.filter((p) => p.regionId === rid && covers(p));
     const head = here.find((p) => p.isHead);
     if (level === 0 && head) out.push(head.id);
-    here.filter((p) => !p.isHead && p.categories.length <= 2).sort((a, b) => a.categories.length - b.categories.length || a.rank - b.rank).forEach((p) => out.push(p.id));
+    here.filter((p) => p.kind === 'department').sort((a, b) => a.rank - b.rank).forEach((p) => out.push(p.id));
   });
   for (const rid of chain(regionId).slice(0, 3)) {
     if (out.length >= 2) break;
     db.positions.filter((p) => p.regionId === rid && covers(p) && !out.includes(p.id)).sort((a, b) => a.rank - b.rank).slice(0, 2 - out.length).forEach((p) => out.push(p.id));
   }
-  out.splice(3);
-  if (!out.length) { const head = db.positions.find((p) => p.regionId === regionId && p.isHead); if (head) out.push(head.id); }
-  return out;
+  return out.slice(0, 3);
 }
 
 function locate(lat, lng) {
-  const dist = (a, b) => {
-    const toRad = (x) => (x * Math.PI) / 180;
-    const dLat = toRad(b[0] - a[0]), dLng = toRad(b[1] - a[1]);
-    const h = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a[0])) * Math.cos(toRad(b[0])) * Math.sin(dLng / 2) ** 2;
-    return 6371 * 2 * Math.asin(Math.sqrt(h));
-  };
-  // deepest region whose circle contains the point; fall back to nearest leaf
+  const ward = db.regions.find((r) => r.type === 'ward' && inPolygon([lat, lng], r.geometry));
+  if (ward) return ward;
   let best = null;
-  for (const r of db.regions) {
-    const d = dist([lat, lng], r.center);
-    if (d <= r.radiusKm && (!best || depth(r.id) > depth(best.r.id) || (depth(r.id) === depth(best.r.id) && d < best.d))) best = { r, d };
-  }
-  if (!best || depth(best.r.id) < 4) {
-    const leaves = db.regions.filter((r) => !db.regions.some((c) => c.parentId === r.id));
-    let near = null;
-    for (const r of leaves) { const d = dist([lat, lng], r.center); if (!near || d < near.d) near = { r, d }; }
-    if (near && near.d < 25) best = near;
-  }
-  return best?.r || null;
+  for (const r of db.regions) { const d = km([lat, lng], r.center); if (d <= r.radiusKm && (!best || depth(r.id) > depth(best.id))) best = r; }
+  return best;
 }
 
 // ---------------- Auth ----------------
@@ -143,13 +159,12 @@ function newSession(userId) {
 }
 function me(u) {
   return {
-    id: u.id, role: u.role, realName: u.realName, regionId: u.regionId, verified: u.verified, onboarded: u.onboarded,
-    following: u.following, handle: publicUser(u).name, party: u.party || null,
+    id: u.id, role: u.role, realName: u.realName || null, regionId: u.regionId, verified: u.verified, onboarded: u.onboarded,
+    following: u.following, contractorsFollowed: u.contractorsFollowed || [], handle: publicUser(u).name, party: u.party || null,
     positionIds: positionsHeldBy(u.id).map((p) => p.id), contractorIds: contractorsOf(u.id).map((c) => c.id),
   };
 }
 
-// Can this acting identity respond (comment / progress) on a given post?
 function canRespond(user, actingAs, post) {
   if (actingAs.type === 'citizen') return true;
   if (actingAs.type === 'admin') return user.role === 'admin';
@@ -162,71 +177,80 @@ function canRespond(user, actingAs, post) {
     const c = CON(actingAs.id);
     if (!c || !c.memberUserIds.includes(user.id)) return false;
     const projIds = db.projects.filter((pj) => pj.contractorId === c.id).map((pj) => pj.id);
-    return db.projects.some((pj) => projIds.includes(pj.id) && pj.linkedProblemIds.includes(post.id)) || (post.projectId && projIds.includes(post.projectId)) || post.mentions.some((m) => m.type === 'contractor' && m.id === c.id);
+    return db.projects.some((pj) => projIds.includes(pj.id) && pj.linkedProblemIds.includes(post.id)) || (post.projectId && projIds.includes(post.projectId))
+      || post.mentions.some((m) => m.type === 'contractor' && m.id === c.id) || (post.workOrderIds || []).some((id) => WO(id)?.contractorId === c.id);
   }
   return false;
 }
 
 function notify(userIds, text, link, type = 'info') {
-  for (const userId of new Set(userIds)) {
-    db.notifications.push({ id: nextId('notif', 'n'), userId, type, text, link, read: false, createdAt: Date.now() });
-  }
+  for (const userId of new Set(userIds)) if (userId) db.notifications.push({ id: nextId('notif', 'n'), userId, type, text, link, read: false, createdAt: Date.now() });
 }
 
 function actorLabel(actingAs, authorId) {
-  if (actingAs.type === 'position') { const p = POS(actingAs.id); return { type: 'position', id: p?.id, title: p ? `${p.title}, ${R(p.regionId)?.name}` : 'Position', person: publicUser(USER(authorId)) }; }
+  if (actingAs.type === 'position') { const p = POS(actingAs.id); return { type: 'position', id: p?.id, title: p ? p.title : 'Position', person: publicUser(USER(authorId)) }; }
   if (actingAs.type === 'contractor') { const c = CON(actingAs.id); return { type: 'contractor', id: c?.id, title: c?.name || 'Contractor', person: publicUser(USER(authorId)) }; }
   if (actingAs.type === 'admin') return { type: 'admin', title: 'Platform Admin' };
-  return { type: 'citizen', person: publicUser(USER(authorId)), title: publicUser(USER(authorId))?.name };
+  const pu = publicUser(USER(authorId));
+  return { type: 'citizen', person: pu, title: pu?.name };
 }
 
+const woBrief = (w) => w && ({ id: w.id, contractorId: w.contractorId, contractorName: conName(w.contractorId), method: w.method, cost: w.cost, expected: w.expected, costRatio: w.costRatio, slaMet: w.slaMet, slaHours: w.slaHours, reopened: w.reopened, completedAt: w.completedAt, assignedAt: w.assignedAt, flags: w.flags.map((f) => f.type), remark: w.remark });
+
 function decorate(p, viewer) {
-  const commentCount = db.comments.filter((c) => c.postId === p.id).length;
+  const road = p.roadId ? ROAD(p.roadId) : null;
   return {
     ...p,
     author: actorLabel(p.actingAs, p.authorId),
-    regionName: R(p.regionId)?.name,
-    upvoteCount: p.upvotes.length,
+    regionName: R(p.regionId)?.shortName || R(p.regionId)?.name,
+    road: road ? { id: road.id, name: road.name, segment: road.segment, underDlp: road.underDlp } : null,
+    upvoteCount: upCount(p),
     upvoted: viewer ? p.upvotes.includes(viewer.id) : false,
     upvotes: undefined,
-    commentCount,
-    linkedProblems: p.linkedProblemIds.map((id) => { const x = POST(id); return x && { id: x.id, title: x.title, status: x.status }; }).filter(Boolean),
-    progressUpdates: p.tag === 'problem' ? db.posts.filter((x) => x.tag === 'progress' && x.linkedProblemIds.includes(p.id)).map((x) => ({ id: x.id, title: x.title, createdAt: x.createdAt })) : [],
+    commentCount: ix.commentCount.get(p.id) || 0,
+    workOrders: (p.workOrderIds || []).map((id) => woBrief(WO(id))).filter(Boolean),
+    linkedProblems: p.linkedProblemIds.slice(0, 6).map((id) => { const x = POST(id); return x && { id: x.id, title: x.title, status: x.status }; }).filter(Boolean),
+    linkedProblemCount: p.linkedProblemIds.length,
+    progressUpdates: p.tag === 'problem' ? (ix.progressByProblem.get(p.id) || []).map((id) => { const x = POST(id); return { id: x.id, title: x.title, createdAt: x.createdAt }; }) : [],
   };
 }
 
 // ---------------- Ranking ----------------
-// Score = recency-decayed engagement × proximity × follow boost × type weight.
-// Lower (closer) areas beat higher areas; followed beats non-followed.
+// Score = engagement (decayed by age) × proximity × follow boost × type weight.
+// Lower (closer) areas beat higher areas; followed beats non-followed; road problems lead.
 function hot(p) {
-  const engagement = p.upvotes.length + 0.5 * db.comments.filter((c) => c.postId === p.id).length;
-  const ageH = (Date.now() - p.createdAt) / 3600000;
-  return (1 + Math.log2(1 + engagement)) / Math.pow(ageH + 2, 0.6);
+  const engagement = upCount(p) + 0.5 * (ix.commentCount.get(p.id) || 0) + (ix.progressByProblem.get(p.id)?.length || 0);
+  const ageH = Math.max(0, (Date.now() - p.createdAt) / 3600000);
+  return (1 + Math.log2(1 + engagement)) / Math.pow(ageH / 24 + 2, 0.6);
+}
+const HIDDEN = new Set(['duplicate', 'rejected']);
+function typeWeight(p) {
+  if (p.tag === 'problem') return ROAD_CATS.includes(p.category) ? 1.25 : DRAIN_CATS.includes(p.category) ? 1.05 : 0.75;
+  if (p.tag === 'normal') return p.source?.type === 'social' ? 0.5 : 0.8;
+  return { progress: 0.9, position_change: 1.1, election: 1.2 }[p.tag] || 1;
 }
 function rankFor(viewer, p) {
   const reasons = [];
   let prox = 0.12;
+  let followBoost = 1;
   if (viewer) {
     const myChain = chain(viewer.regionId);
     const postChain = chain(p.regionId);
-    if (p.regionId === viewer.regionId) { prox = 1; reasons.push('Your area'); }
-    else if (myChain.includes(p.regionId)) { prox = 0.4 + 0.4 * (depth(p.regionId) / Math.max(1, depth(viewer.regionId))); reasons.push('Covers your area'); }
+    if (p.regionId === viewer.regionId) { prox = 1; reasons.push('Your ward'); }
+    else if (myChain.includes(p.regionId)) { prox = 0.4 + 0.4 * (depth(p.regionId) / Math.max(1, depth(viewer.regionId))); reasons.push('Covers your ward'); }
     else {
       const lca = postChain.find((id) => myChain.includes(id));
-      if (lca) { prox = 0.15 + 0.35 * (depth(lca) / Math.max(1, depth(viewer.regionId))); if (depth(lca) >= 4) reasons.push('Nearby'); }
+      if (lca) { prox = 0.15 + 0.35 * (depth(lca) / Math.max(1, depth(viewer.regionId))); if (depth(lca) >= 5) reasons.push('Nearby'); }
     }
     const f = viewer.following;
-    let followed = false;
-    if (f.users.includes(p.authorId)) followed = true;
-    if (p.actingAs.type === 'position' && f.positions.includes(p.actingAs.id)) followed = true;
-    if (p.mentions.some((m) => m.type === 'position' && f.positions.includes(m.id))) followed = true;
-    if (p.responsible.some((r) => f.positions.includes(r.positionId))) followed = true;
-    if (f.regions.includes(p.regionId)) followed = true;
-    if (followed) reasons.push('Following');
-    var followBoost = followed ? 1.7 : 1;
+    let followed = f.users.includes(p.authorId)
+      || (p.actingAs.type === 'position' && f.positions.includes(p.actingAs.id))
+      || p.mentions.some((m) => m.type === 'position' && f.positions.includes(m.id))
+      || p.responsible.some((r) => f.positions.includes(r.positionId))
+      || f.regions.includes(p.regionId);
+    if (followed) { reasons.push('Following'); followBoost = 1.7; }
   }
-  const typeW = { problem: 1.15, progress: 1.2, position_change: 1.0, election: 1.1, normal: 0.85 }[p.tag] || 1;
-  return { score: hot(p) * prox * (followBoost || 1) * typeW, reasons };
+  return { score: hot(p) * prox * followBoost * typeWeight(p), reasons };
 }
 
 // ---------------- App ----------------
@@ -246,26 +270,24 @@ app.get('/api/events', (req, res) => {
   req.on('close', () => { clearInterval(ping); clients.delete(res); });
 });
 
-// Everything public & small: hierarchy, positions, contractors, projects, public people
 app.get('/api/meta', (req, res) => {
   const viewer = getUser(req);
   const people = {};
-  for (const u of db.users) { const pu = publicUser(u); if (pu.kind !== 'anon') people[u.id] = pu; }
+  for (const id of new Set([...ix.held.keys(), ...ix.memberOf.keys(), 'u_admin'])) { const u = USER(id); if (u) people[id] = publicUser(u); }
   res.json({
-    levels: LEVELS, categories: CATEGORIES,
-    regions: db.regions, positions: db.positions, contractors: db.contractors, people,
-    projects: db.projects.map((pj) => ({ ...pj })),
+    levels: LEVELS, categories: CATEGORIES, roadCategories: ROAD_CATS, drainCategories: DRAIN_CATS, flagLabels: FLAG_LABELS,
+    regions: db.regions, positions: db.positions, contractors: db.contractors, people, projects: db.projects,
+    roads: db.roads.map((r) => ({ id: r.id, name: r.name, segment: r.segment, regionId: r.regionId, underDlp: r.underDlp, path: r.path })),
     me: viewer ? me(viewer) : null,
   });
 });
 
 // ---- Auth ----
-// DigiLocker is mocked: in production this is the OAuth flow returning a verified Aadhaar address.
 app.post('/api/auth/digilocker', (req, res) => {
   const { name, regionId, addressLine } = req.body || {};
   if (!name || !R(regionId)) return res.status(400).json({ error: 'Name and address area required' });
   const u = { id: nextId('user', 'u'), role: 'citizen', realName: String(name).slice(0, 60), regionId, addressLine: String(addressLine || '').slice(0, 140), verified: true, onboarded: false, following: { positions: [], users: [], regions: [] }, createdAt: Date.now() };
-  db.users.push(u);
+  add('users', u);
   const token = newSession(u.id);
   changed('users', u.id);
   res.json({ token, me: me(u) });
@@ -281,10 +303,10 @@ app.post('/api/auth/logout', (req, res) => {
   res.json({ ok: true });
 });
 app.get('/api/demo-accounts', (req, res) => {
-  const pick = ['u_cit1', 'u_cit4', 'u_cit7', 'u_corp_kothrud', 'u_je_hadapsar', 'u_commissioner', 'u_cityeng', 'u_sarpanch_wagholi', 'u_c_sahyadri', 'u_c_patil', 'u_admin'];
+  const pick = ['u_demo', 'u_eer_kw', 'u_amc_kw', 'u_swd_fs', 'u_corp_kw', 'u_dmc_zone4', 'u_bmc_comm', 'u_ce_roads', 'u_c_ct01', 'u_c_ct04', 'u_admin'];
   res.json(pick.map(USER).filter(Boolean).map((u) => {
     const held = positionsHeldBy(u.id); const cons = contractorsOf(u.id);
-    const role = u.role === 'admin' ? 'Admin' : held.length ? held.map((p) => `${p.title} · ${R(p.regionId).name}`).join(', ') : cons.length ? `Contractor · ${cons[0].name}` : `Citizen · ${R(u.regionId).name}`;
+    const role = u.role === 'admin' ? 'Admin' : held.length ? held.map((p) => p.title).join(', ') : cons.length ? `Contractor · ${cons[0].name}` : `Citizen · ${R(u.regionId).shortName || R(u.regionId).name}`;
     return { id: u.id, label: u.role === 'admin' || held.length || cons.length ? u.realName : anonHandle(u), role };
   }));
 });
@@ -313,25 +335,36 @@ app.post('/api/follow', auth, (req, res) => {
 // ---- Feed & posts ----
 app.get('/api/feed', (req, res) => {
   const viewer = getUser(req);
-  const tab = req.query.tab || 'foryou';
-  let list = db.posts;
+  const tab = req.query.tab || 'problems';
+  const limit = Math.min(60, Number(req.query.limit) || 40);
+  const offset = Number(req.query.offset) || 0;
+  let list = db.posts.filter((p) => !HIDDEN.has(p.status));
   if (tab === 'problems') list = list.filter((p) => p.tag === 'problem');
-  if (tab === 'following' && viewer) list = list.filter((p) => rankFor(viewer, p).reasons.includes('Following'));
-  const ranked = list.map((p) => ({ p, ...rankFor(viewer, p) })).sort((a, b) => b.score - a.score).slice(0, 80);
-  res.json(ranked.map(({ p, reasons }) => ({ ...decorate(p, viewer), reasons })));
+  const ranked = [];
+  for (const p of list) {
+    const r = rankFor(viewer, p);
+    if (tab === 'following' && !r.reasons.includes('Following')) continue;
+    ranked.push({ p, ...r });
+  }
+  ranked.sort((a, b) => b.score - a.score);
+  res.json(ranked.slice(offset, offset + limit).map(({ p, reasons }) => ({ ...decorate(p, viewer), reasons })));
 });
 
 app.get('/api/posts', (req, res) => {
   const viewer = getUser(req);
-  const { region, subtree: sub, author, position, contractor, tag, project } = req.query;
+  const { region, subtree: sub, author, position, contractor, tag, project, road, status } = req.query;
+  const limit = Math.min(100, Number(req.query.limit) || 50);
   let list = db.posts;
-  if (region) { const ids = sub ? subtree(region) : [region]; list = list.filter((p) => ids.includes(p.regionId)); }
+  if (region) { const ids = new Set(sub ? subtree(region) : [region]); list = list.filter((p) => ids.has(p.regionId)); }
   if (author) list = list.filter((p) => p.authorId === author && p.actingAs.type === 'citizen');
   if (position) list = list.filter((p) => (p.actingAs.type === 'position' && p.actingAs.id === position) || p.mentions.some((m) => m.type === 'position' && m.id === position) || p.responsible.some((r) => r.positionId === position));
   if (contractor) list = list.filter((p) => (p.actingAs.type === 'contractor' && p.actingAs.id === contractor) || p.mentions.some((m) => m.type === 'contractor' && m.id === contractor));
   if (project) { const pj = PROJ(project); list = list.filter((p) => p.projectId === project || pj?.linkedProblemIds.includes(p.id)); }
+  if (road) list = list.filter((p) => p.roadId === road);
   if (tag) list = list.filter((p) => p.tag === tag);
-  res.json([...list].sort((a, b) => b.createdAt - a.createdAt).slice(0, 100).map((p) => decorate(p, viewer)));
+  if (status === 'open') list = list.filter((p) => ['open', 'in_progress', 'acknowledged'].includes(p.status));
+  else if (!req.query.all) list = list.filter((p) => !HIDDEN.has(p.status));
+  res.json([...list].sort((a, b) => b.createdAt - a.createdAt).slice(0, limit).map((p) => decorate(p, viewer)));
 });
 
 app.get('/api/posts/:id', (req, res) => {
@@ -340,19 +373,15 @@ app.get('/api/posts/:id', (req, res) => {
   if (!p) return res.status(404).json({ error: 'Post not found' });
   const comments = db.comments.filter((c) => c.postId === p.id).sort((a, b) => a.createdAt - b.createdAt).map((c) => ({ ...c, author: actorLabel(c.actingAs, c.authorId) }));
   const project = db.projects.find((pj) => pj.id === p.projectId || pj.linkedProblemIds.includes(p.id)) || null;
-  res.json({ post: decorate(p, viewer), comments, project });
+  const workOrders = (p.workOrderIds || []).map(WO).filter(Boolean).map((w) => ({ ...woBrief(w), flagDetails: w.flags, twinId: w.twinId }));
+  res.json({ post: decorate(p, viewer), comments, project, workOrders });
 });
 
 app.post('/api/posts', auth, (req, res) => {
   const u = req.user;
   const b = req.body || {};
   const actingAs = b.actingAs || { type: 'citizen' };
-  const allowed = {
-    citizen: ['problem', 'normal'],
-    position: ['progress'],
-    contractor: ['progress'],
-    admin: ['position_change', 'election', 'normal'],
-  }[actingAs.type];
+  const allowed = { citizen: ['problem', 'normal'], position: ['progress'], contractor: ['progress'], admin: ['position_change', 'election', 'normal'] }[actingAs.type];
   if (!allowed || !allowed.includes(b.tag)) return res.status(403).json({ error: `As ${actingAs.type} you can post: ${(allowed || []).join(', ')}` });
   if (actingAs.type === 'position' && POS(actingAs.id)?.holderUserId !== u.id) return res.status(403).json({ error: 'You do not hold this position' });
   if (actingAs.type === 'contractor' && !CON(actingAs.id)?.memberUserIds.includes(u.id)) return res.status(403).json({ error: 'You are not part of this contractor' });
@@ -360,7 +389,7 @@ app.post('/api/posts', auth, (req, res) => {
   const title = String(b.title || '').trim();
   const body = String(b.body || '').trim();
   if (title.length < 5) return res.status(400).json({ error: 'Title is too short' });
-  if (body.length < 10) return res.status(400).json({ error: 'Write a little more detail in the body' });
+  if (body.length < 10) return res.status(400).json({ error: 'Please write a little more detail' });
 
   let regionId = R(b.regionId) ? b.regionId : u.regionId;
   if (actingAs.type === 'position') regionId = POS(actingAs.id).regionId;
@@ -376,40 +405,35 @@ app.post('/api/posts', auth, (req, res) => {
     const suggested = suggestResponsible(regionId, b.category || 'Other');
     responsible = (chosen.length ? chosen : suggested).map((positionId) => ({ positionId, assignedBy: suggested.includes(positionId) ? 'rules' : 'user' }));
   }
+  const road = ROAD(b.roadId);
   const p = {
     id: nextId('post', 'post'), authorId: u.id, actingAs, tag: b.tag, title: title.slice(0, 140), body: body.slice(0, 5000),
     images: (b.images || []).slice(0, 4), mentions: (b.mentions || []).filter((m) => (m.type === 'position' && POS(m.id)) || (m.type === 'contractor' && CON(m.id))),
-    linkedProblemIds: linked, upvotes: [], status: b.tag === 'problem' ? 'open' : null, viewedByPositions: [], respondedByPositions: [],
-    responsible, category: b.tag === 'problem' ? (b.category || 'Other') : null, location: b.location || null, regionId,
-    projectId: PROJ(b.projectId) ? b.projectId : null, capturedWithCamera: !!b.capturedWithCamera,
-    moderation: { botVerified: null, note: 'Bot verification — coming soon' }, createdAt: Date.now(),
+    linkedProblemIds: linked, workOrderIds: [], upvoteBase: 0, upvotes: [], status: b.tag === 'problem' ? 'open' : null, viewedByPositions: [], respondedByPositions: [],
+    responsible, category: b.tag === 'problem' ? (b.category || 'Other') : null, location: b.location || null, regionId, roadId: road ? road.id : null,
+    projectId: PROJ(b.projectId) ? b.projectId : null, capturedWithCamera: !!b.capturedWithCamera, source: { type: 'app', channel: 'Neta Connect' },
+    moderation: { botVerified: null }, createdAt: Date.now(),
   };
-  db.posts.push(p);
-
-  // Notifications
+  add('posts', p);
   const actor = actorLabel(actingAs, u.id).title;
   if (b.tag === 'progress') {
     for (const id of linked) {
       const prob = POST(id);
+      if (!ix.progressByProblem.has(id)) ix.progressByProblem.set(id, []);
+      ix.progressByProblem.get(id).push(p.id);
       const who = actingAs.type === 'position' ? actingAs.id : null;
       if (who && !prob.respondedByPositions.includes(who)) prob.respondedByPositions.push(who);
       if (b.markResolved) prob.status = 'resolved'; else if (prob.status === 'open' || prob.status === 'acknowledged') prob.status = 'in_progress';
       notify([prob.authorId, ...prob.upvotes].filter((x) => x !== u.id), `${actor} posted a progress update on "${prob.title}"`, `#/post/${p.id}`, 'progress');
     }
-    if (p.projectId) { const pj = PROJ(p.projectId); for (const id of pj.linkedProblemIds) if (!linked.includes(id)) { const prob = POST(id); notify([prob.authorId], `Project update on "${pj.title}" (linked to your problem)`, `#/post/${p.id}`, 'progress'); } }
+    if (p.projectId) { const pj = PROJ(p.projectId); for (const id of pj.linkedProblemIds) if (!linked.includes(id)) notify([POST(id)?.authorId], `Project update on "${pj.title}" (linked to your problem)`, `#/post/${p.id}`, 'progress'); }
   }
-  if (b.tag === 'problem') {
-    const holders = responsible.map((r) => POS(r.positionId)?.holderUserId).filter(Boolean);
-    notify(holders, `New problem in your area: "${p.title}"`, `#/post/${p.id}`, 'problem');
-  }
+  if (b.tag === 'problem') notify(responsible.map((r) => POS(r.positionId)?.holderUserId), `New problem in your area: "${p.title}"`, `#/post/${p.id}`, 'problem');
   for (const m of p.mentions) {
     const ids = m.type === 'position' ? [POS(m.id).holderUserId] : CON(m.id).memberUserIds;
-    notify(ids.filter((x) => x && x !== u.id), `${actor} mentioned you in "${p.title}"`, `#/post/${p.id}`, 'mention');
+    notify(ids.filter((x) => x !== u.id), `${actor} mentioned you in "${p.title}"`, `#/post/${p.id}`, 'mention');
   }
-  if (actingAs.type === 'citizen') {
-    const followers = db.users.filter((x) => x.following.users.includes(u.id)).map((x) => x.id);
-    notify(followers, `A citizen you follow posted: "${p.title}"`, `#/post/${p.id}`, 'follow');
-  }
+  if (actingAs.type === 'citizen') notify(db.users.filter((x) => x.following.users.includes(u.id)).map((x) => x.id), `A citizen you follow posted: "${p.title}"`, `#/post/${p.id}`, 'follow');
   changed('posts', p.id);
   res.json(decorate(p, u));
 });
@@ -420,7 +444,7 @@ app.post('/api/posts/:id/upvote', auth, (req, res) => {
   const i = p.upvotes.indexOf(req.user.id);
   if (i >= 0) p.upvotes.splice(i, 1); else p.upvotes.push(req.user.id);
   changed('posts', p.id);
-  res.json({ upvoted: i < 0, upvoteCount: p.upvotes.length });
+  res.json({ upvoted: i < 0, upvoteCount: upCount(p) });
 });
 
 app.post('/api/posts/:id/comments', auth, (req, res) => {
@@ -429,9 +453,10 @@ app.post('/api/posts/:id/comments', auth, (req, res) => {
   const actingAs = req.body?.actingAs || { type: 'citizen' };
   const body = String(req.body?.body || '').trim();
   if (!body) return res.status(400).json({ error: 'Empty comment' });
-  if (!canRespond(req.user, actingAs, p)) return res.status(403).json({ error: 'You can only respond on behalf of a position/contractor to posts you are responsible for' });
+  if (!canRespond(req.user, actingAs, p)) return res.status(403).json({ error: 'You can only respond on behalf of a position or contractor to posts you are responsible for' });
   const c = { id: nextId('comment', 'cm'), postId: p.id, authorId: req.user.id, actingAs, body: body.slice(0, 2000), createdAt: Date.now() };
   db.comments.push(c);
+  ix.commentCount.set(p.id, (ix.commentCount.get(p.id) || 0) + 1);
   if (actingAs.type === 'position') {
     if (!p.respondedByPositions.includes(actingAs.id)) p.respondedByPositions.push(actingAs.id);
     if (!p.viewedByPositions.includes(actingAs.id)) p.viewedByPositions.push(actingAs.id);
@@ -445,7 +470,7 @@ app.post('/api/posts/:id/comments', auth, (req, res) => {
 app.post('/api/posts/:id/view', auth, (req, res) => {
   const p = POST(req.params.id); const pos = POS(req.body?.positionId);
   if (!p || !pos || pos.holderUserId !== req.user.id) return res.json({ ok: false });
-  if (!p.viewedByPositions.includes(pos.id)) { p.viewedByPositions.push(pos.id); changed('posts', p.id); }
+  if (!p.viewedByPositions.includes(pos.id)) { p.viewedByPositions.push(pos.id); save(); }
   res.json({ ok: true });
 });
 
@@ -459,7 +484,6 @@ app.post('/api/posts/:id/status', auth, (req, res) => {
   res.json({ ok: true });
 });
 
-// Official re-assigns responsibility (records who assigned: person)
 app.post('/api/posts/:id/assign', auth, (req, res) => {
   const p = POST(req.params.id);
   const { positionId, actingPositionId } = req.body || {};
@@ -467,7 +491,7 @@ app.post('/api/posts/:id/assign', auth, (req, res) => {
   const isAdmin = req.user.role === 'admin';
   if (!p || !POS(positionId) || (!isAdmin && (!actor || !canRespond(req.user, { type: 'position', id: actor.id }, p)))) return res.status(403).json({ error: 'Not allowed' });
   if (!p.responsible.some((r) => r.positionId === positionId)) p.responsible.push({ positionId, assignedBy: 'person', assignedByUserId: req.user.id });
-  const h = POS(positionId).holderUserId; if (h) notify([h], `A problem was assigned to ${POS(positionId).title}: "${p.title}"`, `#/post/${p.id}`, 'problem');
+  notify([POS(positionId).holderUserId], `A problem was assigned to ${POS(positionId).title}: "${p.title}"`, `#/post/${p.id}`, 'problem');
   changed('posts', p.id);
   res.json({ ok: true });
 });
@@ -476,9 +500,11 @@ app.get('/api/locate', (req, res) => {
   const lat = Number(req.query.lat), lng = Number(req.query.lng);
   const r = Number.isFinite(lat) && Number.isFinite(lng) ? locate(lat, lng) : null;
   if (!r) return res.json({ region: null });
-  const positions = chain(r.id).flatMap((rid) => db.positions.filter((p) => p.regionId === rid)).slice(0, 12);
+  const positions = chain(r.id).flatMap((rid) => db.positions.filter((p) => p.regionId === rid).sort((a, b) => a.rank - b.rank)).slice(0, 12);
   const contractorIds = [...new Set(positions.flatMap((p) => p.contractorIds))];
-  res.json({ region: r, chain: chain(r.id), positionIds: positions.map((p) => p.id), contractorIds });
+  let road = null;
+  for (const x of db.roads) { const d = km([lat, lng], x.mid); if (x.regionId === r.id && d < 0.6 && (!road || d < road.d)) road = { id: x.id, name: x.name, segment: x.segment, underDlp: x.underDlp, d }; }
+  res.json({ region: r, chain: chain(r.id), positionIds: positions.map((p) => p.id), contractorIds, road });
 });
 
 app.get('/api/suggest', (req, res) => {
@@ -486,18 +512,115 @@ app.get('/api/suggest', (req, res) => {
   res.json({ positionIds: regionId ? suggestResponsible(regionId, req.query.category || 'Other') : [], by: 'rules' });
 });
 
+// ---- Follow the rupee ----
+app.get('/api/money/:regionId', (req, res) => {
+  const r = R(req.params.regionId);
+  if (!r) return res.status(404).json({ error: 'Unknown area' });
+  if (!wardsUnder(r.id).length) return res.json({ none: true });
+  const m = moneyFor(r.id);
+  res.json({ ...m, summary: r.type === 'ward' ? wardScorecard(db, r, m) : null });
+});
+app.get('/api/planner/:regionId', (req, res) => {
+  const r = R(req.params.regionId);
+  if (!r) return res.status(404).json({ error: 'Unknown area' });
+  const wards = wardsUnder(r.id);
+  if (!wards.length) return res.json({ none: true });
+  res.json(planner(db, wards, moneyFor));
+});
+app.get('/api/scorecards', (req, res) => res.json(db.contractors.map((c) => ({ ...contractorScorecard(db, c), name: c.name })).filter((x) => x.jobs).sort((a, b) => b.score - a.score)));
+app.get('/api/contractors/:id/scorecard', (req, res) => { const c = CON(req.params.id); res.json(c ? contractorScorecard(db, c) : null); });
+
+app.get('/api/workorders', (req, res) => {
+  const { region, contractor, road, flag } = req.query;
+  let list = db.workOrders;
+  if (region) { const ids = new Set(subtree(region)); list = list.filter((w) => ids.has(w.regionId)); }
+  if (contractor) list = list.filter((w) => w.contractorId === contractor);
+  if (road) list = list.filter((w) => w.roadId === road);
+  if (flag === 'any') list = list.filter((w) => w.flags.some((f) => f.severity === 'high'));
+  else if (flag) list = list.filter((w) => w.flags.some((f) => f.type === flag));
+  const total = list.length;
+  const amount = list.reduce((a, w) => a + w.cost, 0);
+  res.json({ total, amount, items: [...list].sort((a, b) => b.completedAt - a.completedAt).slice(0, Number(req.query.limit) || 60).map((w) => ({ ...woBrief(w), roadName: ROAD(w.roadId)?.name, wardCode: w.wardCode, workType: w.workType, flagDetails: w.flags })) });
+});
+app.get('/api/workorders/:id', (req, res) => {
+  const w = WO(req.params.id);
+  if (!w) return res.status(404).json({ error: 'Work order not found' });
+  const road = ROAD(w.roadId);
+  const sameRoad = db.workOrders.filter((o) => o.roadId === w.roadId && o.id !== w.id).sort((a, b) => a.completedAt - b.completedAt).map(woBrief);
+  res.json({ workOrder: { ...w, contractorName: conName(w.contractorId) }, road, complaints: w.complaintIds.map(POST).filter(Boolean).map((p) => decorate(p)), sameRoad, rain: { assigned: ref.rain[new Date(w.assignedAt + 5.5 * 3600e3).toISOString().slice(0, 10)] || null } });
+});
+app.get('/api/roads/:id', (req, res) => {
+  const road = ROAD(req.params.id);
+  if (!road) return res.status(404).json({ error: 'Road not found' });
+  const info = roadInfo(db, road);
+  const complaints = db.posts.filter((p) => p.tag === 'problem' && p.roadId === road.id);
+  res.json({ ...info, workOrders: info.workOrders.sort((a, b) => b.completedAt - a.completedAt).map((w) => ({ ...woBrief(w), workType: w.workType })), complaintCount: complaints.length, openCount: complaints.filter((p) => ['open', 'in_progress'].includes(p.status)).length });
+});
+app.get('/api/positions/:id/stats', (req, res) => {
+  const pos = POS(req.params.id);
+  if (!pos) return res.status(404).json({ error: 'Not found' });
+  const area = new Set(subtree(pos.regionId));
+  const problems = db.posts.filter((p) => p.tag === 'problem' && !HIDDEN.has(p.status) && (p.responsible.some((r) => r.positionId === pos.id)));
+  const updates = db.posts.filter((p) => p.actingAs.type === 'position' && p.actingAs.id === pos.id).length;
+  res.json({ problems: problems.length, open: problems.filter((p) => ['open', 'in_progress', 'acknowledged'].includes(p.status)).length, responded: problems.filter((p) => p.respondedByPositions.includes(pos.id)).length, updates, projects: db.projects.filter((pj) => pj.positionId === pos.id || area.has(pj.regionId)).length });
+});
+
+// ---- Stories (positions & contractors post short updates; followers see them, 24 h) ----
+const STORY_TTL = 24 * 3600e3;
+app.get('/api/stories', (req, res) => {
+  const viewer = getUser(req);
+  const live = (db.stories || []).filter((st) => Date.now() - st.createdAt < STORY_TTL);
+  const follows = (st) => viewer && ((st.actor.type === 'position' && viewer.following.positions.includes(st.actor.id)) || (st.actor.type === 'contractor' && (viewer.contractorsFollowed || []).includes(st.actor.id)) || st.authorId === viewer.id);
+  const groups = {};
+  for (const st of live.filter(follows).sort((a, b) => a.createdAt - b.createdAt)) {
+    const k = st.actor.type + ':' + st.actor.id;
+    const label = st.actor.type === 'position' ? POS(st.actor.id)?.title : CON(st.actor.id)?.name;
+    (groups[k] ||= { key: k, actor: st.actor, title: label, person: publicUser(USER(st.authorId))?.name, items: [] }).items.push({ id: st.id, text: st.text, createdAt: st.createdAt, seen: st.seenBy.includes(viewer.id) });
+  }
+  const list = Object.values(groups).sort((a, b) => (a.items.every((i) => i.seen) - b.items.every((i) => i.seen)) || b.items.at(-1).createdAt - a.items.at(-1).createdAt);
+  res.json({ groups: list, unseen: list.reduce((n, g) => n + g.items.filter((i) => !i.seen).length, 0) });
+});
+app.post('/api/stories', auth, (req, res) => {
+  const a = req.body?.actingAs || {};
+  const ok = (a.type === 'position' && POS(a.id)?.holderUserId === req.user.id) || (a.type === 'contractor' && CON(a.id)?.memberUserIds.includes(req.user.id));
+  const text = String(req.body?.text || '').trim();
+  if (!ok) return res.status(403).json({ error: 'Only positions and contractors can post stories' });
+  if (text.length < 5) return res.status(400).json({ error: 'Story is too short' });
+  const st = { id: 'st_' + crypto.randomBytes(4).toString('hex'), actor: { type: a.type, id: a.id }, authorId: req.user.id, text: text.slice(0, 280), createdAt: Date.now(), seenBy: [] };
+  (db.stories ||= []).push(st);
+  changed('stories', st.id);
+  res.json(st);
+});
+app.post('/api/stories/:id/seen', auth, (req, res) => {
+  const st = (db.stories || []).find((x) => x.id === req.params.id);
+  if (st && !st.seenBy.includes(req.user.id)) { st.seenBy.push(req.user.id); save(); }
+  res.json({ ok: true });
+});
+app.post('/api/follow-contractor', auth, (req, res) => {
+  const list = (req.user.contractorsFollowed ||= []);
+  const i = list.indexOf(req.body?.id);
+  if (req.body?.on && i < 0 && CON(req.body.id)) list.push(req.body.id);
+  if (!req.body?.on && i >= 0) list.splice(i, 1);
+  changed('users', req.user.id);
+  res.json(me(req.user));
+});
+
 // ---- Dashboards ----
 app.get('/api/dashboard/position/:id', auth, (req, res) => {
   const pos = POS(req.params.id);
   if (!pos || (pos.holderUserId !== req.user.id && req.user.role !== 'admin')) return res.status(403).json({ error: 'Not your position' });
-  const area = subtree(pos.regionId);
-  const problems = db.posts.filter((p) => p.tag === 'problem' && (p.responsible.some((r) => r.positionId === pos.id) || area.includes(p.regionId)));
-  const ranked = problems.map((p) => ({ p, s: hot(p) * (p.responsible.some((r) => r.positionId === pos.id) ? 1.5 : 1) * (p.status === 'resolved' ? 0.2 : 1) })).sort((a, b) => b.s - a.s).map(({ p }) => ({ ...decorate(p, req.user), assignedToMe: p.responsible.some((r) => r.positionId === pos.id), viewed: p.viewedByPositions.includes(pos.id), responded: p.respondedByPositions.includes(pos.id) }));
+  const area = new Set(subtree(pos.regionId));
+  const problems = db.posts.filter((p) => p.tag === 'problem' && !HIDDEN.has(p.status) && (p.responsible.some((r) => r.positionId === pos.id) || area.has(p.regionId)));
+  const scored = problems.map((p) => ({ p, s: hot(p) * (p.responsible.some((r) => r.positionId === pos.id) ? 1.5 : 1) * (p.status === 'resolved' ? 0.1 : 1) * typeWeight(p) })).sort((a, b) => b.s - a.s);
+  const mark = (p) => ({ viewed: p.viewedByPositions.includes(pos.id), responded: p.respondedByPositions.includes(pos.id) });
+  const counts = { total: problems.length, unviewed: 0, unresponded: 0, resolved: 0, open: 0 };
+  for (const p of problems) { const m = mark(p); if (!m.viewed) counts.unviewed++; if (p.status === 'resolved') counts.resolved++; else { counts.open++; if (!m.responded) counts.unresponded++; } }
+  const f = req.query.filter;
+  const filtered = scored.filter(({ p }) => { const m = mark(p); return !f || f === 'all' || (f === 'unviewed' && !m.viewed) || (f === 'unresponded' && !m.responded && p.status !== 'resolved') || (f === 'mine' && p.responsible.some((r) => r.positionId === pos.id)) || (f === 'open' && p.status !== 'resolved'); });
   res.json({
-    position: pos,
-    problems: ranked,
-    counts: { total: ranked.length, unviewed: ranked.filter((x) => !x.viewed).length, unresponded: ranked.filter((x) => !x.responded && x.status !== 'resolved').length, resolved: ranked.filter((x) => x.status === 'resolved').length },
-    projects: db.projects.filter((pj) => pj.positionId === pos.id || area.includes(pj.regionId)),
+    position: pos, counts,
+    problems: filtered.slice(0, 80).map(({ p }) => ({ ...decorate(p, req.user), assignedToMe: p.responsible.some((r) => r.positionId === pos.id), ...mark(p) })),
+    projects: db.projects.filter((pj) => pj.positionId === pos.id || area.has(pj.regionId)),
   });
 });
 
@@ -508,20 +631,19 @@ app.post('/api/projects', auth, (req, res) => {
   if (!pos || pos.holderUserId !== req.user.id) return res.status(403).json({ error: 'Create projects from a position you hold' });
   if (!b.title || !(Number(b.budget) > 0)) return res.status(400).json({ error: 'Title and budget required' });
   const pj = {
-    id: nextId('project', 'pj'), title: String(b.title).slice(0, 140), description: String(b.description || '').slice(0, 3000), category: b.category || 'Roads',
-    regionId: R(b.regionId) && inSubtree(b.regionId, pos.regionId) ? b.regionId : pos.regionId, positionId: pos.id,
+    id: nextId('project', 'pj'), title: String(b.title).slice(0, 140), description: String(b.description || '').slice(0, 3000), category: b.category || 'Pothole',
+    regionId: R(b.regionId) && inSubtree(b.regionId, pos.regionId) ? b.regionId : pos.regionId, roadId: ROAD(b.roadId) ? b.roadId : null, positionId: pos.id,
     approvedByPositionId: pos.id, approvedByUserId: req.user.id, contractorId: CON(b.contractorId) ? b.contractorId : null,
     budget: Number(b.budget), spent: 0, status: CON(b.contractorId) ? 'in_progress' : 'bidding',
     linkedProblemIds: (b.linkedProblemIds || []).filter((id) => POST(id)?.tag === 'problem'), bids: [], startDate: CON(b.contractorId) ? Date.now() : null, endDate: null, createdAt: Date.now(),
   };
-  db.projects.push(pj);
+  add('projects', pj);
   for (const id of pj.linkedProblemIds) { const prob = POST(id); notify([prob.authorId, ...prob.upvotes], `Your problem "${prob.title}" was added to project "${pj.title}"`, `#/project/${pj.id}`, 'project'); if (prob.status === 'open' || prob.status === 'acknowledged') prob.status = 'in_progress'; if (!prob.respondedByPositions.includes(pos.id)) prob.respondedByPositions.push(pos.id); }
   if (pj.contractorId) notify(CON(pj.contractorId).memberUserIds, `You were assigned project "${pj.title}"`, `#/project/${pj.id}`, 'project');
-  else { const eligible = db.contractors.filter((c) => c.regionIds.some((r) => inSubtree(pj.regionId, r))); notify(eligible.flatMap((c) => c.memberUserIds), `New project open for bids: "${pj.title}"`, `#/project/${pj.id}`, 'project'); }
+  else notify(db.contractors.filter((c) => c.regionIds.some((r) => inSubtree(pj.regionId, r))).flatMap((c) => c.memberUserIds), `New project open for bids: "${pj.title}"`, `#/project/${pj.id}`, 'project');
   changed('projects', pj.id);
   res.json(pj);
 });
-
 app.post('/api/projects/:id/link', auth, (req, res) => {
   const pj = PROJ(req.params.id); const pos = POS(pj?.positionId);
   if (!pj || pos?.holderUserId !== req.user.id) return res.status(403).json({ error: 'Not allowed' });
@@ -529,28 +651,25 @@ app.post('/api/projects/:id/link', auth, (req, res) => {
   changed('projects', pj.id);
   res.json(pj);
 });
-
 app.post('/api/projects/:id/bids', auth, (req, res) => {
   const pj = PROJ(req.params.id); const c = CON(req.body?.contractorId);
   if (!pj || !c || !c.memberUserIds.includes(req.user.id)) return res.status(403).json({ error: 'Not allowed' });
   if (pj.status !== 'bidding') return res.status(400).json({ error: 'Bidding is closed' });
   pj.bids = pj.bids.filter((x) => x.contractorId !== c.id);
   pj.bids.push({ contractorId: c.id, amount: Number(req.body.amount), timelineDays: Number(req.body.timelineDays), note: String(req.body.note || '').slice(0, 300), at: Date.now() });
-  const h = POS(pj.positionId)?.holderUserId; if (h) notify([h], `${c.name} placed a bid on "${pj.title}"`, `#/project/${pj.id}`, 'project');
+  notify([POS(pj.positionId)?.holderUserId], `${c.name} placed a bid on "${pj.title}"`, `#/project/${pj.id}`, 'project');
   changed('projects', pj.id);
   res.json(pj);
 });
-
 app.post('/api/projects/:id/award', auth, (req, res) => {
   const pj = PROJ(req.params.id); const pos = POS(pj?.positionId); const c = CON(req.body?.contractorId);
   if (!pj || !c || pos?.holderUserId !== req.user.id) return res.status(403).json({ error: 'Only the responsible position can award' });
   pj.contractorId = c.id; pj.status = 'in_progress'; pj.startDate = Date.now(); pj.approvedByUserId = req.user.id; pj.approvedByPositionId = pos.id;
   notify(c.memberUserIds, `You won the bid for "${pj.title}"`, `#/project/${pj.id}`, 'project');
-  notify(pj.linkedProblemIds.map((id) => POST(id)?.authorId).filter(Boolean), `Contractor ${c.name} assigned to fix "${pj.title}"`, `#/project/${pj.id}`, 'project');
+  notify(pj.linkedProblemIds.map((id) => POST(id)?.authorId), `Contractor ${c.name} assigned to fix "${pj.title}"`, `#/project/${pj.id}`, 'project');
   changed('projects', pj.id);
   res.json(pj);
 });
-
 app.post('/api/projects/:id/update', auth, (req, res) => {
   const pj = PROJ(req.params.id); const pos = POS(pj?.positionId);
   if (!pj || pos?.holderUserId !== req.user.id) return res.status(403).json({ error: 'Not allowed' });
@@ -560,7 +679,6 @@ app.post('/api/projects/:id/update', auth, (req, res) => {
   res.json(pj);
 });
 
-// Assign a contractor to a position (position holder) — "assign contractors to people"
 app.post('/api/positions/:id/contractors', auth, (req, res) => {
   const pos = POS(req.params.id); const c = CON(req.body?.contractorId);
   if (!pos || !c || (pos.holderUserId !== req.user.id && req.user.role !== 'admin')) return res.status(403).json({ error: 'Not allowed' });
@@ -569,7 +687,7 @@ app.post('/api/positions/:id/contractors', auth, (req, res) => {
     pos.contractorIds.push(c.id);
     c.assignedBy.push({ positionId: pos.id, regionId: pos.regionId, at: Date.now() });
     if (!c.regionIds.some((r) => inSubtree(pos.regionId, r))) c.regionIds.push(pos.regionId);
-    notify(c.memberUserIds, `${pos.title}, ${R(pos.regionId).name} added you as an assigned contractor`, `#/contractor/${c.id}`, 'project');
+    notify(c.memberUserIds, `${pos.title} added you as an assigned contractor`, `#/contractor/${c.id}`, 'project');
   }
   changed('positions', pos.id);
   res.json(pos);
@@ -586,12 +704,12 @@ app.post('/api/admin/assign', auth, (req, res) => {
   const prev = pos.holderUserId ? USER(pos.holderUserId) : null;
   pos.holderUserId = u ? u.id : null;
   if (u && req.body.party !== undefined) u.party = req.body.party || null;
-  if (u) notify([u.id], `You have been assigned the position ${pos.title}, ${R(pos.regionId).name}`, `#/position/${pos.id}`, 'position');
   if (u) {
-    const p = { id: nextId('post', 'post'), authorId: req.user.id, actingAs: { type: 'admin' }, tag: 'position_change', title: `${u.realName} is now ${pos.title}, ${R(pos.regionId).name}`, body: `${u.realName}${u.party ? ` (${u.party})` : ''} has taken charge as ${pos.title}${prev ? `, succeeding ${prev.realName}` : ''}. Responsibilities: ${pos.responsibilities.join('; ')}.`, images: [], mentions: [{ type: 'position', id: pos.id }], linkedProblemIds: [], upvotes: [], status: null, viewedByPositions: [], respondedByPositions: [], responsible: [], category: null, location: null, regionId: pos.regionId, projectId: null, moderation: { botVerified: null }, createdAt: Date.now() };
-    db.posts.push(p);
-    const followers = db.users.filter((x) => x.following.positions.includes(pos.id)).map((x) => x.id);
-    notify(followers, `Position change: ${p.title}`, `#/post/${p.id}`, 'position');
+    if (!u.realName) u.realName = anonHandle(u);
+    notify([u.id], `You have been assigned the position ${pos.title}`, `#/position/${pos.id}`, 'position');
+    const p = { id: nextId('post', 'post'), authorId: req.user.id, actingAs: { type: 'admin' }, tag: 'position_change', title: `${u.realName} is now ${pos.title}`, body: `${u.realName}${u.party ? ` (${u.party})` : ''} has taken charge as ${pos.title}${prev ? `, succeeding ${prev.realName}` : ''}. Responsibilities: ${pos.responsibilities.join('; ')}.`, images: [], mentions: [{ type: 'position', id: pos.id }], linkedProblemIds: [], workOrderIds: [], upvoteBase: 0, upvotes: [], status: null, viewedByPositions: [], respondedByPositions: [], responsible: [], category: null, location: null, regionId: pos.regionId, roadId: null, projectId: null, moderation: { botVerified: null }, createdAt: Date.now() };
+    add('posts', p);
+    notify(db.users.filter((x) => x.following.positions.includes(pos.id)).map((x) => x.id), `Position change: ${p.title}`, `#/post/${p.id}`, 'position');
   }
   changed('positions', pos.id);
   res.json(pos);
@@ -600,10 +718,10 @@ app.post('/api/admin/assign', auth, (req, res) => {
 app.post('/api/admin/positions', auth, (req, res) => {
   const b = req.body || {};
   if (!R(b.regionId)) return res.status(400).json({ error: 'Unknown area' });
-  if (req.user.role !== 'admin' && !isHeadOf(req.user, b.regionId)) return res.status(403).json({ error: 'Only admins or the area\'s fixed head position can edit area positions' });
+  if (req.user.role !== 'admin' && !isHeadOf(req.user, b.regionId)) return res.status(403).json({ error: "Only admins or the area's fixed head position can edit area positions" });
   if (!b.title) return res.status(400).json({ error: 'Title required' });
-  const p = { id: nextId('position', 'p'), regionId: b.regionId, title: String(b.title).slice(0, 100), kind: ['elected', 'appointed', 'department'].includes(b.kind) ? b.kind : 'appointed', holderUserId: null, categories: (b.categories || []).filter((c) => CATEGORIES.includes(c)), responsibilities: (b.responsibilities || []).map(String).filter(Boolean).slice(0, 8), budget: Number(b.budget) || 0, contractorIds: [], isHead: false, rank: 4, createdAt: Date.now() };
-  db.positions.push(p);
+  const p = { id: nextId('position', 'p_new'), regionId: b.regionId, title: String(b.title).slice(0, 100), kind: ['elected', 'appointed', 'department'].includes(b.kind) ? b.kind : 'appointed', holderUserId: null, categories: (b.categories || []).filter((c) => CATEGORIES.includes(c)), responsibilities: (b.responsibilities || []).map(String).filter(Boolean).slice(0, 8), budget: Number(b.budget) || 0, contractorIds: [], isHead: false, rank: 4, createdAt: Date.now() };
+  add('positions', p);
   changed('positions', p.id);
   res.json(p);
 });
@@ -611,12 +729,11 @@ app.post('/api/admin/positions', auth, (req, res) => {
 app.post('/api/admin/contractors', auth, (req, res) => {
   const b = req.body || {};
   const pos = POS(b.positionId);
-  const allowed = req.user.role === 'admin' || (pos && pos.holderUserId === req.user.id);
-  if (!allowed) return res.status(403).json({ error: 'Not allowed' });
+  if (!(req.user.role === 'admin' || (pos && pos.holderUserId === req.user.id))) return res.status(403).json({ error: 'Not allowed' });
   const members = (b.memberUserIds || []).filter((id) => USER(id));
   if (!b.name || !members.length) return res.status(400).json({ error: 'Name and at least one member required' });
-  const c = { id: nextId('contractor', 'c'), name: String(b.name).slice(0, 100), type: ['company', 'individual', 'group'].includes(b.type) ? b.type : 'company', memberUserIds: members, regionIds: [pos ? pos.regionId : (R(b.regionId) ? b.regionId : 'r_in')], specialties: (b.specialties || []).filter((x) => CATEGORIES.includes(x)), gstin: '', assignedBy: pos ? [{ positionId: pos.id, regionId: pos.regionId, at: Date.now() }] : [], createdAt: Date.now() };
-  db.contractors.push(c);
+  const c = { id: nextId('contractor', 'c'), name: String(b.name).slice(0, 100), type: ['company', 'individual', 'group'].includes(b.type) ? b.type : 'company', memberUserIds: members, regionIds: [pos ? pos.regionId : (R(b.regionId) ? b.regionId : 'r_bmc')], specialties: (b.specialties || []).filter((x) => CATEGORIES.includes(x)), gstin: '', assignedBy: pos ? [{ positionId: pos.id, regionId: pos.regionId, at: Date.now() }] : [], createdAt: Date.now() };
+  add('contractors', c);
   if (pos) pos.contractorIds.push(c.id);
   notify(members, `You were registered as part of contractor "${c.name}"`, `#/contractor/${c.id}`, 'project');
   changed('contractors', c.id);
@@ -626,34 +743,26 @@ app.post('/api/admin/contractors', auth, (req, res) => {
 app.get('/api/admin/users', auth, (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
   const q = String(req.query.q || '').toLowerCase();
-  res.json(db.users.filter((u) => !q || (u.realName || '').toLowerCase().includes(q) || anonHandle(u).toLowerCase().includes(q)).slice(0, 30).map((u) => ({ id: u.id, realName: u.realName, handle: anonHandle(u), regionId: u.regionId, role: u.role })));
+  const out = [];
+  for (const u of db.users) { if (out.length >= 30) break; const name = u.realName || anonHandle(u); if (!q || name.toLowerCase().includes(q) || anonHandle(u).toLowerCase().includes(q)) out.push({ id: u.id, realName: name, handle: anonHandle(u), regionId: u.regionId, role: u.role }); }
+  res.json(out);
 });
-
 app.get('/api/admin/assignments', auth, (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
-  res.json(db.posts.filter((p) => p.tag === 'problem').sort((a, b) => b.createdAt - a.createdAt).map((p) => ({ id: p.id, title: p.title, regionName: R(p.regionId)?.name, responsible: p.responsible.map((r) => ({ ...r, title: POS(r.positionId)?.title, assignedByName: r.assignedByUserId ? USER(r.assignedByUserId)?.realName : null })) })));
+  res.json(db.posts.filter((p) => p.tag === 'problem' && !HIDDEN.has(p.status)).sort((a, b) => b.createdAt - a.createdAt).slice(0, 60).map((p) => ({ id: p.id, title: p.title, regionName: R(p.regionId)?.shortName || R(p.regionId)?.name, categoryReported: p.categoryReported, category: p.category, responsible: p.responsible.map((r) => ({ ...r, title: POS(r.positionId)?.title, assignedByName: r.assignedByUserId ? USER(r.assignedByUserId)?.realName : null })) })));
 });
 
 // ---- Notifications ----
-app.get('/api/notifications', auth, (req, res) => {
-  res.json(db.notifications.filter((n) => n.userId === req.user.id).sort((a, b) => b.createdAt - a.createdAt).slice(0, 100));
-});
-app.post('/api/notifications/read', auth, (req, res) => {
-  for (const n of db.notifications) if (n.userId === req.user.id) n.read = true;
-  save();
-  res.json({ ok: true });
-});
+app.get('/api/notifications', auth, (req, res) => res.json(db.notifications.filter((n) => n.userId === req.user.id).sort((a, b) => b.createdAt - a.createdAt).slice(0, 100)));
+app.post('/api/notifications/read', auth, (req, res) => { for (const n of db.notifications) if (n.userId === req.user.id) n.read = true; save(); res.json({ ok: true }); });
 
-// ---- People ----
 app.get('/api/people/:id', (req, res) => {
   const u = USER(req.params.id);
   if (!u) return res.status(404).json({ error: 'Not found' });
   const viewer = getUser(req);
-  const followers = db.users.filter((x) => x.following.users.includes(u.id)).length;
-  res.json({ person: publicUser(u), followers, isMe: viewer?.id === u.id });
+  res.json({ person: publicUser(u), followers: db.users.filter((x) => x.following.users.includes(u.id)).length, isMe: viewer?.id === u.id });
 });
 
-// ---- Uploads (images as data URLs, compressed client-side) ----
 app.post('/api/upload', auth, (req, res) => {
   const m = /^data:image\/(png|jpe?g|webp);base64,(.+)$/.exec(req.body?.dataUrl || '');
   if (!m) return res.status(400).json({ error: 'Unsupported image' });

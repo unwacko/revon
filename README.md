@@ -1,41 +1,47 @@
 # Neta Connect (prototype)
 
-A platform connecting citizens with politicians and officials (and, to a lesser degree, contractors) across India's governance hierarchy. Citizens report problems, the platform shows who is responsible, and officials respond publicly.
+**Every monsoon, Mumbai spends crores repairing the same roads.** Neta Connect connects citizens with everyone accountable for a road, from the ward engineer up to the Prime Minister. For every ward, road and contractor it answers three questions:
+
+1. **Where did the money go?** Money trail by ward, zone and city: budget vs spend, by contractor, issue, method and month, plus audit flags.
+2. **Did the fix last?** Every complaint links to the work order that fixed it: cost vs the rate card, time target, and whether it re-opened within 30 days. Contractor scorecards compare each job with peers doing the same work in the same ward.
+3. **Where should the next rupee go?** A risk-ranked planner covering open complaints, repeat failures, flood hotspots, traffic, accidents and nearby hospitals or schools. It recommends the longest-lasting repair method and fits the list to the remaining budget. Roads still under DLP go back to the original contractor.
 
 ## Run
 
 ```bash
 npm install
-npm run dev        # http://localhost:3000  (auto-restarts on server changes)
-npm run reset      # wipe data/ and re-seed sample data
+npm run dev        # http://localhost:3000
+npm run reset      # rebuild the database from /dataset
 ```
 
-Open on your phone (same Wi-Fi): `http://<your-computer-ip>:3000`.
+To use it on your phone (same Wi-Fi), open `http://<your-computer-ip>:3000`. Demo accounts are on the login screen. Official accounts open in their official view; switch views from the bottom-left of the sidebar or from Profile.
+
+## Data
+
+`/dataset` holds the synthetic **“Follow the Rupee: Mumbai Monsoon Roads”** dataset (CC BY 4.0, [source](https://github.com/SumeetGDoshi/Claude-Impact-Labs-data-2)). It contains 24 BMC wards with polygons, 6,501 complaints, 2,499 work orders, 291 road segments, a rate card, 8 contractors, plus rainfall, tides, flood hotspots, traffic, accidents and facilities. It is **not BMC data**. Office holders, parties and contractor staff in the app are fictional.
+
+How the data maps into the app:
+- Complaints → 🟡 problem posts. The category is corrected from the linked work order; the citizen's own tag is still shown.
+- Work orders → 🟣 progress updates from the ward engineer, with a repair record on each problem.
+- Social posts → ⚪ normal posts.
+
+Audit flags:
+- **Paid during DLP**: road still under its Defect Liability Period.
+- **Possible double billing**: same road and same work within 10 days, with no complaint linked.
+- **Over rate card**: billed more than 1.5× the rate card (normal variation is 20–30%).
+- **Late**, with heavy-rain context.
+- **Fix did not last**: re-opened within 30 days.
+
+Flags are prompts to check the records, not proof of wrongdoing.
 
 ## Stack
-- **Server**: Node + Express (`server/index.js`), JSON-file persistence in `data/db.json`, image uploads in `data/uploads/`.
-- **Live sync**: Server-Sent Events (`/api/events`). Every write is broadcast and open clients re-fetch, so every device stays in sync.
-- **Client**: Preact + htm with no build step (`public/js`), a hash router, Leaflet maps (OpenStreetMap tiles).
-- Moving to the cloud later means swapping the JSON store for Postgres and deploying the same server. We'll cover that after testing.
+- Node + Express (`server/`), JSON-file persistence (`data/db.json`), live sync over Server-Sent Events.
+- `server/analytics.js`: audit flags, money trail, fair scorecards, next-rupee planner.
+- Preact + htm client with no build step (`public/js`), Leaflet with the dataset's ward polygons. Click a ward to zoom into it.
+- Layout follows Instagram: icon rail, two-pane settings, stories. Font is Reddit Sans; dark theme by default.
 
-## Roles & what's built
-| Role | Can do |
-|---|---|
-| Citizen (DigiLocker-verified, anonymous) | Ranked feed, post 🟡 Problem / ⚪ normal posts, camera + geolocation reporting, upvote, comment, follow positions/citizens/areas, notifications |
-| Position holder | Official dashboard: ranked problems, unviewed/unresponded counts, bulk 🟣 progress updates (auto-notify problem posters), status changes, re-assign responsibility, create projects, award bids, assign/register contractors, switch to citizen view |
-| Contractor (company / group of citizens) | Dashboard, bid on open projects, post updates only on assigned projects |
-| Admin | Assign people to positions (auto-publishes a 🔵 position-change post), 🟢 election posts, register contractors, problem-routing log (auto vs. person-assigned) |
-| Area head (fixed position) | Add positions to their area |
+## Hierarchy
+India (PM) → Maharashtra (CM, PWD, MMRDA) → Konkan Division → Greater Mumbai / BMC (Mayor, Commissioner, Chief Engineers; Collectors of Mumbai City and Mumbai Suburban) → 7 zones (Deputy Municipal Commissioners) → 24 wards (Assistant Commissioner, Executive Engineer Roads, Assistant Engineer Storm Water Drains, Corporator). The rural Panchayati Raj track is explained at `#/structure`.
 
-## Region hierarchy (fact-checked)
-Nation (PM) → State (CM) → Revenue Division (Divisional Commissioner) → District (Collector, SP; MP attached) → then two parallel tracks:
-- **Urban (74th Amendment)**: Municipal Corporation (Mayor, Commissioner, City Engineer, Traffic DCP) → Ward (Corporators, Ward Officer, Junior Engineer; MLA attached)
-- **Rural (73rd Amendment)**: Zilla Parishad (President, CEO) → Panchayat Samiti/Block (Sabhapati, BDO) → Gram Panchayat (Sarpanch, Gram Sevak)
-
-Lok Sabha and Vidhan Sabha constituencies overlap these areas, so MPs and MLAs are attached to the area that best contains them. Tehsil/Taluka is a revenue unit and is described in-app (`#/structure`) but not modelled as a tree level.
-
-## Future (buttons shown, not functional; also listed at `#/roadmap` for the PPT/video)
-AI tag-verification bot · content-policy bot · AI accountability detection from photo and text · real DigiLocker OAuth and privacy guarantee · automated official-post rules · push/SMS · real GIS ward boundaries.
-
-## Sample data
-`server/seed.js` contains Pune-based **fictional** people, parties and businesses, plus placeholder road problems. Replace it with the road-problems dataset (then run `npm run reset`).
+## Future (shown as “Soon” buttons, listed at `#/roadmap` for the PPT and video)
+Claude-written summaries and a multilingual “What happened to my complaint?” assistant · tag-verification and content-policy bots · AI accountability detection from photos · real DigiLocker sign-in and privacy guarantee · push/SMS · official GIS boundaries.

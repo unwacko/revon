@@ -1,37 +1,46 @@
-import { html, useState, setMode, store, useStore, api, post, useData, go, toast, region, position, contractor, project, person, children, chain, positionsIn, levelLabel, inr, ago, fmtNum, M, STATUS } from '../lib.js';
-import { Header, Icon, Avatar, Tabs, PostCard, PositionRow, ContractorRow, ProjectRow, RegionRow, Breadcrumb, BudgetBars, AreaMap, FollowButton, Loading, Empty, ErrorBox, StatusPill, Party, Sheet, ComingSoon } from '../components.js';
+import { html, useState, setMode, store, useStore, api, post, useData, go, toast, region, position, contractor, project, person, children, chain, positionsIn, levelLabel, inr, rs, pct, ago, fmtNum, fmtDate, M, STATUS, regionName } from '../lib.js';
+import { Header, Icon, Avatar, Tabs, PostCard, PositionRow, ContractorRow, ProjectRow, RegionRow, WorkOrderRow, Breadcrumb, BudgetBars, AreaMap, FollowButton, Loading, Empty, ErrorBox, StatusPill, Party, Sheet, ComingSoon, MoneyPanel, PlannerPanel, ScorecardPanel, Kpis, BudgetPanel } from '../components.js';
 
-// ---------------- Explore ----------------
-export function Explore() {
+// ---------------- Responsibles (was Explore) ----------------
+export function Responsibles() {
   const s = useStore();
   const [q, setQ] = useState('');
+  const city = useData(() => api('/money/r_bmc'), []);
   const ql = q.trim().toLowerCase();
   const me = s.meta.me;
   const res = ql ? {
     regions: M().regions.filter((r) => r.name.toLowerCase().includes(ql)).slice(0, 6),
-    positions: M().positions.filter((p) => (p.title + ' ' + (person(p.holderUserId)?.name || '') + ' ' + region(p.regionId).name).toLowerCase().includes(ql)).slice(0, 10),
+    roads: M().roads.filter((r) => r.name.toLowerCase().includes(ql)).slice(0, 8),
+    positions: M().positions.filter((p) => (p.title + ' ' + (person(p.holderUserId)?.name || '') + ' ' + regionName(p.regionId)).toLowerCase().includes(ql)).slice(0, 10),
     contractors: M().contractors.filter((c) => c.name.toLowerCase().includes(ql)).slice(0, 6),
     projects: M().projects.filter((p) => p.title.toLowerCase().includes(ql)).slice(0, 6),
   } : null;
+  const m = city.data;
   return html`
-    <header class="topbar"><div class="search"><${Icon} n="search" s=${18} /><input placeholder="Search areas, positions, people, contractors" value=${q} onInput=${(e) => setQ(e.target.value)} aria-label="Search" /></div></header>
+    <header class="topbar"><div class="search"><${Icon} n="search" s=${20} /><input placeholder="Search wards, roads, officials, contractors" value=${q} onInput=${(e) => setQ(e.target.value)} aria-label="Search" /></div></header>
     ${res ? html`<div class="list">
       ${res.regions.map((r) => html`<${RegionRow} r=${r} />`)}
+      ${res.roads.map((r) => html`<a class="row" href=${'#/road/' + r.id}><div class="region-ic"><${Icon} n="road" s=${22} /></div><div class="row-main"><div class="row-t">${r.name} · segment ${r.segment}</div><div class="row-s">${regionName(r.regionId)}${r.underDlp ? ' · under DLP' : ''}</div></div></a>`)}
       ${res.positions.map((p) => html`<${PositionRow} p=${p} showRegion />`)}
       ${res.contractors.map((c) => html`<${ContractorRow} c=${c} />`)}
       ${res.projects.map((pj) => html`<${ProjectRow} pj=${pj} />`)}
       ${!Object.values(res).flat().length ? html`<${Empty}>No results for “${q}”.</${Empty}>` : null}
     </div>` : html`
+      <section class="card pad hero">
+        <div class="sec-h"><b>Mumbai monsoon roads 2025</b><a class="link" href="#/region/r_bmc?tab=money">Money trail ›</a></div>
+        ${m ? html`<${Kpis} items=${[[rs(m.spend), 'spent of ' + rs(m.budget)], [pct(m.reopenRate), 'fixes failed in 30 days', 'bad'], [pct(m.slaMet), 'finished on time', 'warn'], [rs(m.flags.dlp.amount + m.flags.duplicate.amount + m.flags.overbilled.excess), 'needs a second look', 'bad', () => go('#/audit/r_bmc')]]} />` : html`<${Loading} />`}
+        <div class="btn-row wrap"><a class="btn btn-primary" href="#/region/r_bmc?tab=plan">Where should the next rupee go?</a><a class="btn btn-ghost" href="#/scorecards">Contractor scorecards</a></div>
+      </section>
       ${me ? html`<section class="card pad">
-        <div class="sec-h"><b>Accountable for your area</b><a href=${'#/region/' + me.regionId} class="link">${region(me.regionId).name} ›</a></div>
-        ${chain(me.regionId).slice(0, 3).flatMap((r) => positionsIn(r.id).slice(0, 3)).map((p) => html`<${PositionRow} p=${p} showRegion />`)}
+        <div class="sec-h"><b>Accountable for your ward</b><a href=${'#/region/' + me.regionId} class="link">${regionName(me.regionId)} ›</a></div>
+        ${chain(me.regionId).slice(0, 2).flatMap((r) => positionsIn(r.id).slice(0, 4)).map((p) => html`<${PositionRow} p=${p} showRegion />`)}
       </section>` : null}
       <section class="card pad">
-        <div class="sec-h"><b>Hierarchy of India</b><a class="link" href="#/structure">How it works ›</a></div>
-        <p class="muted small">Area → positions → people. Tap to expand. Higher and lower are relative to where you are.</p>
+        <div class="sec-h"><b>Who is responsible — India to your ward</b><a class="link" href="#/structure">How it works ›</a></div>
+        <p class="dim small">Area → positions → people. Tap ▸ to expand. "Higher" and "lower" are relative to where you are.</p>
         <${TreeNode} id="r_in" open depth=${0} />
       </section>
-      <section class="card pad"><div class="sec-h"><b>Contractors & businesses</b></div>${M().contractors.map((c) => html`<${ContractorRow} c=${c} />`)}</section>
+      <section class="card pad"><div class="sec-h"><b>Contractors</b><a class="link" href="#/scorecards">Scorecards ›</a></div>${M().contractors.map((c) => html`<${ContractorRow} c=${c} />`)}</section>
       <section class="card pad"><div class="sec-h"><b>Projects</b></div>${M().projects.map((pj) => html`<${ProjectRow} pj=${pj} />`)}</section>
     `}`;
 }
@@ -56,84 +65,182 @@ function TreeNode({ id, open: initial, depth }) {
 
 export function Structure() {
   const rows = [
-    ['Nation', 'Prime Minister (Union Council of Ministers)', 'MPs — Lok Sabha constituencies (543)'],
-    ['State / UT', 'Chief Minister (Governor is constitutional head)', 'MLAs — Vidhan Sabha constituencies'],
-    ['Revenue Division', 'Divisional Commissioner (IAS)', 'Groups several districts (most states)'],
-    ['District', 'District Collector / Magistrate (IAS), SP (IPS)', 'Administrative hub of every department'],
-    ['Sub-division / Tehsil / Taluka', 'SDM, Tehsildar', 'Revenue & land records'],
-    ['Urban: Municipal Corporation / Council / Nagar Panchayat', 'Mayor / Chairperson (elected), Municipal Commissioner / Chief Officer (appointed)', '74th Amendment local bodies'],
-    ['Urban: Ward', 'Corporator / Councillor (Nagarsevak), Ward Officer, Junior Engineer', 'Smallest urban unit'],
-    ['Rural: Zilla Parishad', 'ZP President (elected), CEO (IAS)', '73rd Amendment — district panchayat'],
-    ['Rural: Panchayat Samiti (Block)', 'Sabhapati / Pradhan (elected), Block Development Officer', 'Intermediate panchayat'],
-    ['Rural: Gram Panchayat', 'Sarpanch / Pradhan (elected), Gram Sevak / Panchayat Secretary', 'Village level; Gram Sabha of all voters'],
+    ['Nation', 'Prime Minister (Union Council of Ministers)', 'MPs — Lok Sabha constituencies (543). National highways via NHAI.'],
+    ['State / UT', 'Chief Minister (the Governor is the constitutional head)', 'MLAs — Vidhan Sabha constituencies. State PWD and MMRDA roads.'],
+    ['Revenue Division', 'Divisional Commissioner (IAS)', 'Groups districts — Mumbai falls in Konkan Division.'],
+    ['District', 'Collector (IAS), Superintendent / Commissioner of Police', 'Mumbai has two: Mumbai City and Mumbai Suburban.'],
+    ['Municipal Corporation', 'Mayor (elected), Municipal Commissioner (IAS, executive head)', 'BMC covers both Mumbai districts. Chief Engineers for Roads and Storm Water Drains.'],
+    ['Municipal Zone', 'Deputy Municipal Commissioner', 'BMC groups its 24 wards into 7 zones.'],
+    ['Ward', 'Assistant Municipal Commissioner (ward office), Executive Engineer (Roads), Corporators', 'Wards A to T. Each administrative ward contains several electoral wards with their own corporators.'],
+    ['Rural: Zilla Parishad → Panchayat Samiti → Gram Panchayat', 'ZP President & CEO → Sabhapati & BDO → Sarpanch & Gram Sevak', '73rd Amendment — the three-tier Panchayati Raj outside cities.'],
   ];
   return html`<${Header} title="How India is divided" back />
     <section class="card pad">
-      <p>Every problem on this platform belongs to an <b>area</b>. Each area has a fixed head position plus other positions (police, engineers, departments). People and contractors are assigned to those positions.</p>
-      <p class="muted small">Two parallel local tracks exist below the district: <b>urban</b> (74th Constitutional Amendment) and <b>rural</b> (73rd Amendment, three-tier Panchayati Raj). Electoral constituencies (Lok Sabha, Vidhan Sabha) overlap these administrative areas, so MPs and MLAs are attached to the area that best contains their constituency. Names vary by state (e.g. Taluka / Tehsil / Mandal; Sarpanch / Pradhan / Mukhiya).</p>
+      <p>Every problem here belongs to an <b>area</b>. Each area has a fixed head position plus other positions (engineers, police, departments). People and contractors are assigned to those positions.</p>
+      <p class="dim small">Cities follow the 74th Constitutional Amendment (municipal bodies); villages follow the 73rd (Panchayati Raj). Lok Sabha and Vidhan Sabha constituencies overlap these areas, so MPs and MLAs are attached to the area that best contains them. Names vary by state (Taluka / Tehsil / Mandal; Sarpanch / Pradhan / Mukhiya).</p>
     </section>
     <section class="card pad structure">
-      ${rows.map(([lvl, who, note], i) => html`<div class="st-row"><div class="st-n">${i + 1}</div><div><b>${lvl}</b><div>${who}</div><div class="muted small">${note}</div></div></div>`)}
-    </section>
-    <section class="card pad"><div class="muted small">Also outside this tree but often responsible for roads: NHAI (national highways), State PWD / MSRDC (state highways), Cantonment Boards, Development Authorities (e.g. PMRDA), and Smart City SPVs. These appear as positions attached to the area they serve.</div></section>`;
+      ${rows.map(([lvl, who, note], i) => html`<div class="st-row"><div class="st-n">${i + 1}</div><div><b>${lvl}</b><div>${who}</div><div class="dim small">${note}</div></div></div>`)}
+    </section>`;
 }
 
 // ---------------- Area page ----------------
-export function RegionPage({ id }) {
+export function RegionPage({ id, query = {} }) {
   const s = useStore();
   const r = region(id);
-  const [tab, setTab] = useState('positions');
+  const [tab, setTab] = useState(query.tab || (r?.type === 'ward' || r?.type === 'zone' || r?.id === 'r_bmc' ? 'money' : 'positions'));
   const [addOpen, setAddOpen] = useState(false);
-  const posts = useData(() => api(`/posts?region=${id}&subtree=1`), [id]);
+  const hasWards = r && (r.type === 'ward' || r.type === 'zone' || r.id === 'r_bmc' || ['r_in', 'r_mh', 'r_konkan'].includes(r.id));
+  const money = useData(() => (hasWards && tab === 'money' ? api('/money/' + id) : Promise.resolve(null)), [id, tab]);
+  const plan = useData(() => (hasWards && tab === 'plan' ? api('/planner/' + id) : Promise.resolve(null)), [id, tab]);
+  const posts = useData(() => (tab === 'problems' ? api(`/posts?region=${id}&subtree=1&tag=problem&status=open&limit=40`) : Promise.resolve([])), [id, tab]);
   if (!r) return html`<${Header} title="Area" back /><${ErrorBox} error="Area not found" />`;
   const ps = positionsIn(id);
   const head = ps.find((p) => p.isHead);
   const kids = children(id);
   const me = s.meta.me;
   const canEdit = me && (me.role === 'admin' || (head && head.holderUserId === me.id));
-  const problems = posts.data?.filter((p) => p.tag === 'problem') || [];
   const projects = M().projects.filter((pj) => chain(pj.regionId).some((c) => c.id === id));
+  const roads = r.type === 'ward' ? M().roads.filter((x) => x.regionId === id) : [];
   return html`
-    <${Header} title=${r.name} sub=${levelLabel(r.type)} back right=${html`<${FollowButton} type="region" id=${id} small />`} />
+    <${Header} title=${r.shortName || r.name} sub=${levelLabel(r.type)} back right=${html`<${FollowButton} type="region" id=${id} small />`} />
     <${Breadcrumb} regionId=${id} />
-    <${AreaMap} regions=${[r, ...kids]} height=${190} />
+    <${AreaMap} regions=${[r, ...kids]} height=${260} roads=${roads.map((x) => ({ ...x, label: `${x.name} · seg ${x.segment}`, href: '#/road/' + x.id, color: x.underDlp ? '#22c55e' : '#f97316' }))} />
+    <div class="dim small pad-x">Tap an area on the map to zoom in. ${roads.length ? 'Orange = ward roads, green = under Defect Liability Period.' : ''}</div>
     <div class="stats">
       <div><b>${fmtNum(r.population)}</b><span>people</span></div>
       <div><b>${ps.length}</b><span>positions</span></div>
-      <div><b>${problems.filter((p) => p.status !== 'resolved').length}</b><span>open problems</span></div>
+      <div><b>${kids.length || roads.length}</b><span>${kids.length ? 'sub-areas' : 'road segments'}</span></div>
       <div><b>${inr(Object.values(r.budget).reduce((a, b) => a + b, 0))}</b><span>budget</span></div>
     </div>
-    ${r.note ? html`<div class="muted small pad-x">${r.note}</div>` : null}
-    ${head ? html`<section class="card pad head-card"><div class="muted small">Fixed head position — can edit this area's positions</div><${PositionRow} p=${head} /></section>` : null}
-    <${Tabs} value=${tab} onChange=${setTab} tabs=${[['positions', 'Positions'], ['problems', 'Problems', problems.length || null], ['projects', 'Projects'], ['budget', 'Budget'], ...(kids.length ? [['areas', 'Sub-areas']] : [])]} />
+    ${r.note ? html`<div class="dim small pad-x">${r.note}</div>` : null}
+    ${r.lowLying != null ? html`<div class="dim small pad-x">Flood index ${r.lowLying} · ${r.crews} engineering crews/day · ${r.localities.join(', ')}</div>` : null}
+    ${head ? html`<section class="card pad head-card"><div class="dim small">Fixed head position — can edit this area's positions</div><${PositionRow} p=${head} /></section>` : null}
+    <${Tabs} value=${tab} onChange=${setTab} tabs=${[...(hasWards ? [['money', 'Money'], ['plan', 'Next rupee']] : []), ['budget', 'Budget'], ['positions', 'Positions'], ['problems', 'Open problems'], ['projects', 'Projects'], ...(kids.length ? [['areas', 'Sub-areas']] : []), ...(roads.length ? [['roads', 'Roads']] : [])]} />
+    ${tab === 'money' ? (money.loading ? html`<${Loading} />` : html`<${MoneyPanel} m=${money.data} regionId=${id} />`) : null}
+    ${tab === 'plan' ? (plan.loading ? html`<${Loading} />` : html`<${PlannerPanel} data=${plan.data} />`) : null}
     ${tab === 'positions' ? html`<section class="list">
       ${ps.map((p) => html`<div class="pos-block"><${PositionRow} p=${p} /><div class="resp-list">${p.responsibilities.slice(0, 3).map((x) => html`<span>${x}</span>`)}</div></div>`)}
       ${canEdit ? html`<button class="btn btn-ghost btn-block" onClick=${() => setAddOpen(true)}>+ Add position to this area</button>` : null}
     </section>` : null}
-    ${tab === 'problems' ? (posts.loading ? html`<${Loading} />` : problems.length ? problems.map((p) => html`<${PostCard} p=${p} compact />`) : html`<${Empty}>No problems reported here yet.</${Empty}>`) : null}
+    ${tab === 'budget' ? html`<${AreaBudget} r=${r} kids=${kids} ps=${ps} />` : null}
+    ${tab === 'problems' ? (posts.loading ? html`<${Loading} />` : posts.data.length ? html`<div class="feed">${posts.data.map((p) => html`<${PostCard} p=${p} compact />`)}</div>` : html`<${Empty}>No open problems here.</${Empty}>`) : null}
     ${tab === 'projects' ? html`<section class="list">${projects.length ? projects.map((pj) => html`<${ProjectRow} pj=${pj} />`) : html`<${Empty}>No projects yet.</${Empty}>`}</section>` : null}
-    ${tab === 'budget' ? html`<${BudgetBars} budget=${r.budget} />
-      <section class="card pad"><div class="sec-h"><b>By position</b></div>${ps.filter((p) => p.budget).map((p) => html`<div class="budget-row"><div class="budget-l"><a href=${'#/position/' + p.id}>${p.title}</a><b>${inr(p.budget)}</b></div></div>`)}</section>` : null}
-    ${tab === 'areas' ? html`<section class="list">${kids.map((k) => html`<${RegionRow} r=${k} right=${html`<span class="muted small">${positionsIn(k.id).length} positions</span>`} />`)}</section>` : null}
+    ${tab === 'areas' ? html`<section class="list">${kids.map((k) => html`<${RegionRow} r=${k} right=${html`<span class="dim small">${positionsIn(k.id).length} positions</span>`} />`)}</section>` : null}
+    ${tab === 'roads' ? html`<section class="list">${roads.map((x) => html`<a class="row" href=${'#/road/' + x.id}><div class="region-ic"><${Icon} n="road" s=${22} /></div><div class="row-main"><div class="row-t">${x.name} · segment ${x.segment}</div><div class="row-s">${x.underDlp ? html`<span class="ok">Under DLP</span>` : 'Out of DLP'}</div></div><${Icon} n="chev" /></a>`)}</section>` : null}
     <${AddPositionSheet} open=${addOpen} onClose=${() => setAddOpen(false)} regionId=${id} />`;
 }
 
 function AddPositionSheet({ open, onClose, regionId }) {
-  const [f, setF] = useState({ title: '', kind: 'appointed', categories: ['Roads'], responsibilities: '', budget: '' });
+  const [f, setF] = useState({ title: '', kind: 'appointed', categories: ['Pothole'], responsibilities: '', budget: '' });
   if (!open) return null;
   const submit = async (e) => {
     e.preventDefault();
     try { await post('/admin/positions', { ...f, regionId, responsibilities: f.responsibilities.split('\n') }); toast('Position added'); onClose(); } catch (err) { toast(err.message); }
   };
   return html`<${Sheet} open title="Add position" onClose=${onClose}><form class="form" onSubmit=${submit}>
-    <label class="field"><span>Title</span><input required value=${f.title} onInput=${(e) => setF({ ...f, title: e.target.value })} placeholder="e.g. Assistant Engineer (Drainage)" /></label>
+    <label class="field"><span>Title</span><input required value=${f.title} onInput=${(e) => setF({ ...f, title: e.target.value })} placeholder="e.g. Sub-Engineer (Roads)" /></label>
     <label class="field"><span>Type</span><select value=${f.kind} onChange=${(e) => setF({ ...f, kind: e.target.value })}><option value="elected">Elected</option><option value="appointed">Appointed</option><option value="department">Department</option></select></label>
-    <div class="field"><span>Responsible for categories</span><div class="chips">${M().categories.map((c) => html`<button type="button" class=${'chip-btn' + (f.categories.includes(c) ? ' on' : '')} onClick=${() => setF({ ...f, categories: f.categories.includes(c) ? f.categories.filter((x) => x !== c) : [...f.categories, c] })}>${c}</button>`)}</div></div>
+    <div class="field"><span>Responsible for</span><div class="chips">${M().categories.map((c) => html`<button type="button" class=${'chip-btn' + (f.categories.includes(c) ? ' on' : '')} onClick=${() => setF({ ...f, categories: f.categories.includes(c) ? f.categories.filter((x) => x !== c) : [...f.categories, c] })}>${c}</button>`)}</div></div>
     <label class="field"><span>Responsibilities (one per line)</span><textarea rows="3" value=${f.responsibilities} onInput=${(e) => setF({ ...f, responsibilities: e.target.value })}></textarea></label>
     <label class="field"><span>Budget (₹ crore)</span><input type="number" step="0.01" value=${f.budget} onInput=${(e) => setF({ ...f, budget: e.target.value })} /></label>
     <button class="btn btn-primary btn-block">Add position</button>
-    <p class="muted small">People are assigned to positions by platform admins.</p>
+    <p class="dim small">People are assigned to positions by platform admins.</p>
   </form></${Sheet}>`;
+}
+
+function wardBudget(r) { return Object.values(r.budget || {}).reduce((a, b) => a + b, 0); }
+function sumWards(id) { const r = region(id); if (r.type === 'ward') return wardBudget(r); return children(id).reduce((a, k) => a + sumWards(k.id), 0); }
+function AreaBudget({ r, kids, ps }) {
+  const own = Object.entries(r.budget || {});
+  const total = own.reduce((a, e) => a + e[1], 0);
+  const parent = r.parentId && region(r.parentId);
+  const parentTotal = parent ? Object.values(parent.budget || {}).reduce((a, b) => a + b, 0) : 0;
+  const money = useData(() => (r.type !== 'nation' && r.type !== 'state' ? api('/money/' + r.id) : Promise.resolve(null)), [r.id]);
+  const m = money.data && !money.data.none ? money.data : null;
+  return html`
+    <${BudgetPanel} title="Budget by category" entries=${own} context=${parent && parentTotal ? `${((total / parentTotal) * 100).toFixed(1)}% of ${parent.shortName || parent.name}'s ${inr(parentTotal)}` : null}
+      detail=${() => m ? html`<div class="sec-h"><b>Spent vs budget</b></div><div class="budget-l"><span>${rs(m.spend)} spent of ${rs(m.budget)}</span><b class=${m.spend > m.budget ? 'bad' : ''}>${pct(m.spend / (m.budget || 1))}</b></div><div class=${'bar' + (m.spend > m.budget ? ' over' : '')}><i style=${`width:${Math.min(100, (m.spend / (m.budget || 1)) * 100)}%`}></i></div>` : null} />
+    ${kids.length && kids.some((k) => sumWards(k.id) > 0) ? html`<${BudgetPanel} title="Allocation to sub-areas" entries=${kids.map((k) => [k.shortName || k.name, sumWards(k.id)])} />` : null}
+    ${ps.some((p) => p.budget) ? html`<${BudgetPanel} title="Allocation by position" entries=${ps.map((p) => [p.title, p.budget])} />` : null}
+    ${m ? html`<${BudgetPanel} title="Actual spend by issue" entries=${m.byWorkType} money=${rs} context=${`${rs(m.spend)} spent on ${m.jobs} jobs`} />
+      <${BudgetPanel} title="Actual spend by contractor" entries=${m.byContractor} money=${rs} />` : null}`;
+}
+
+// ---------------- Road ----------------
+const woFlags = (flags) => flags.map((t) => ({ type: t, severity: ['overbilled', 'duplicate', 'dlp'].includes(t) ? 'high' : 'note' }));
+export function RoadPage({ id }) {
+  const { data, error, loading } = useData(() => api('/roads/' + id), [id]);
+  const posts = useData(() => api(`/posts?road=${id}&tag=problem&limit=30`), [id]);
+  if (loading) return html`<${Header} title="Road" back /><${Loading} />`;
+  if (error) return html`<${Header} title="Road" back /><${ErrorBox} error=${error} />`;
+  const { road, workOrders, hotspots, accidents, roadAccidents, facilities, spend, reopened } = data;
+  return html`
+    <${Header} title=${road.name} sub=${`Segment ${road.segment} · ${regionName(road.regionId)}`} back />
+    <${AreaMap} regions=${[region(road.regionId)]} roads=${[{ ...road, label: road.name, color: road.underDlp ? '#22c55e' : '#f97316' }]} focus="roads" height=${220} />
+    <${Kpis} items=${[[rs(spend), 'spent this monsoon'], [workOrders.length, 'repairs'], [reopened, 'failed within 30 days', reopened ? 'bad' : ''], [data.openCount, 'open complaints', data.openCount ? 'warn' : '']]} />
+    <section class="card pad">
+      <div class="kv"><span>Type · surface</span><span>${road.type} · ${road.surface} · ${road.lanes} lanes · ${road.lengthM} m</span></div>
+      <div class="kv"><span>Last resurfaced</span><span>${road.lastResurfaced}</span></div>
+      <div class="kv"><span>Defect Liability Period</span>${road.underDlp ? html`<span class="ok">Active — the original contractor must repair it free</span>` : html`<span>Expired</span>`}</div>
+      <div class="kv"><span>Peak traffic</span><span>${fmtNum(road.traffic.peak)} vehicles/hr · ${road.traffic.speed} km/h · congestion ${road.traffic.congestion}/10</span></div>
+      <div class="kv"><span>BEST buses</span><span>${road.busRoute ? `Yes · ${road.traffic.buses} routes` : 'No'}</span></div>
+      ${hotspots.map((h) => html`<div class="kv"><span>Flood hotspot</span><span class="warn">${h.name} — flooded ${h.years} of last 5 years${h.tide ? ', tide-sensitive' : ''}</span></div>`)}
+      ${facilities.map((f) => html`<div class="kv"><span>${f.type === 'Hospital' ? 'Ambulance access' : 'School access'}</span><span>${f.name}${f.emergency ? ' (emergency)' : ''}</span></div>`)}
+      <div class="kv"><span>Accidents 2024–25</span><span>${accidents.length} total · <b class=${roadAccidents.length ? 'bad' : ''}>${roadAccidents.length}</b> linked to road condition</span></div>
+    </section>
+    <div class="sec-h pad-x"><b>Repair history — did the fixes last?</b></div>
+    <section class="list">${workOrders.length ? workOrders.map((w) => html`<${WorkOrderRow} w=${{ ...w, roadName: road.name, flagDetails: woFlags(w.flags) }} />`) : html`<${Empty}>No repairs recorded.</${Empty}>`}</section>
+    <div class="sec-h pad-x"><b>Complaints on this road</b><span class="dim">${data.complaintCount}</span></div>
+    ${posts.loading ? html`<${Loading} />` : html`<div class="feed">${posts.data.map((p) => html`<${PostCard} p=${p} compact />`)}</div>`}`;
+}
+
+// ---------------- Work order ----------------
+export function WorkOrderPage({ id }) {
+  const { data, error, loading } = useData(() => api('/workorders/' + id), [id]);
+  if (loading) return html`<${Header} title="Work order" back /><${Loading} />`;
+  if (error) return html`<${Header} title="Work order" back /><${ErrorBox} error=${error} />`;
+  const { workOrder: w, road, complaints, sameRoad, rain } = data;
+  const hrs = (w.completedAt - w.assignedAt) / 3600e3;
+  return html`
+    <${Header} title=${w.id} sub=${`${w.workType} · ${regionName(w.regionId)}`} back />
+    <section class="card pad">
+      <h2 class="h2">${w.method}</h2>
+      <div class="kv"><span>Road</span><a href=${'#/road/' + w.roadId}>${road?.name} · segment ${road?.segment}</a></div>
+      <div class="kv"><span>Contractor</span><a href=${'#/contractor/' + w.contractorId}>${w.contractorName}</a></div>
+      <div class="kv"><span>Area repaired</span><span>${w.areaSqm} sq m</span></div>
+      <div class="kv"><span>Billed</span><b>${rs(w.cost)}</b></div>
+      <div class="kv"><span>Rate card</span><span>${rs(w.expected)} expected · <b class=${w.costRatio > 1.5 ? 'bad' : w.costRatio > 1.3 ? 'warn' : 'ok'}>${w.costRatio?.toFixed(2)}×</b></span></div>
+      <div class="kv"><span>Assigned</span><span>${new Date(w.assignedAt).toLocaleString('en-IN')}</span></div>
+      <div class="kv"><span>Completed</span><span>${new Date(w.completedAt).toLocaleString('en-IN')} (${hrs.toFixed(0)} h)</span></div>
+      <div class="kv"><span>Time target</span><span class=${w.slaMet ? 'ok' : 'warn'}>${w.slaHours} h · ${w.slaMet ? 'met' : 'missed'}</span></div>
+      <div class="kv"><span>Held for 30 days?</span><span class=${w.reopened ? 'bad' : 'ok'}>${w.reopened ? 'No — re-opened' : 'Yes'}</span></div>
+      ${rain.assigned ? html`<div class="kv"><span>Rain that day</span><span>${Object.entries(rain.assigned).map(([st, r]) => `${st}: ${r.mm} mm (${r.cat})`).join(' · ')}</span></div>` : null}
+      ${w.remark ? html`<div class="kv"><span>Engineer's note</span><span>${w.remark}</span></div>` : null}
+    </section>
+    ${w.flags.length ? html`<section class="card pad"><div class="sec-h"><b>Audit</b></div>${w.flags.map((f) => html`<div class=${'flag-box' + (f.severity === 'note' ? ' note' : '')}><${Icon} n=${f.severity === 'high' ? 'alert' : 'flag'} s=${18} /><div><b>${M().flagLabels[f.type]}</b><div>${f.text}</div>${f.type === 'duplicate' && w.twinId ? html`<a href=${'#/wo/' + w.twinId}>See ${w.twinId} ›</a>` : null}</div></div>`)}<p class="dim small">Flags are prompts to check the records, not proof of wrongdoing.</p></section>` : html`<section class="card pad"><b class="ok">No audit flags.</b></section>`}
+    <div class="sec-h pad-x"><b>Complaints this fixed</b><span class="dim">${complaints.length}</span></div>
+    ${complaints.length ? html`<div class="feed">${complaints.map((p) => html`<${PostCard} p=${p} compact />`)}</div>` : html`<${Empty}>No complaint was linked to this job.</${Empty}>`}
+    <div class="sec-h pad-x"><b>Other repairs on this road</b></div>
+    <section class="list">${sameRoad.map((o) => html`<${WorkOrderRow} w=${{ ...o, roadName: road?.name, workType: '', flagDetails: woFlags(o.flags) }} />`)}</section>`;
+}
+
+// ---------------- Audit list ----------------
+export function AuditPage({ id, query }) {
+  const [flag, setFlag] = useState(query.flag || 'any');
+  const qs = new URLSearchParams({ region: id, flag, limit: 80, ...(query.contractor ? { contractor: query.contractor } : {}) });
+  const { data, loading } = useData(() => api('/workorders?' + qs), [id, flag, query.contractor]);
+  const labels = M().flagLabels;
+  return html`<${Header} title="Audit flags" sub=${regionName(id) + (query.contractor ? ' · ' + contractor(query.contractor)?.name : '')} back />
+    <div class="chips pad-x">${[['any', 'All high-priority'], ['dlp', labels.dlp], ['duplicate', labels.duplicate], ['overbilled', labels.overbilled], ['reopened', labels.reopened], ['sla', labels.sla]].map(([k, l]) => html`<button class=${'chip-btn' + (flag === k ? ' on' : '')} onClick=${() => setFlag(k)}>${l}</button>`)}</div>
+    ${loading ? html`<${Loading} />` : html`<div class="dim small pad-x">${fmtNum(data.total)} work orders · ${rs(data.amount)} billed${data.total > data.items.length ? ` · showing latest ${data.items.length}` : ''}</div>
+      <section class="list">${data.items.map((w) => html`<${WorkOrderRow} w=${w} />`)}</section>`}`;
+}
+
+export function Scorecards() {
+  const { data, loading } = useData(() => api('/scorecards'), []);
+  return html`<${Header} title="Contractor scorecards" sub="Monsoon 2025 · fair, evidence-based" back />
+    ${loading ? html`<${Loading} />` : data.map((sc) => html`<${ScorecardPanel} sc=${sc} name=${html`<a href=${'#/contractor/' + sc.contractorId}>${sc.name}</a>`} />`)}`;
 }
 
 // ---------------- Position profile ----------------
@@ -141,79 +248,75 @@ export function PositionPage({ id }) {
   const s = useStore();
   const p = position(id);
   const [tab, setTab] = useState('posts');
-  const posts = useData(() => api('/posts?position=' + id), [id]);
+  const posts = useData(() => api('/posts?position=' + id + '&limit=40'), [id]);
+  const stats = useData(() => api(`/positions/${id}/stats`), [id]);
   if (!p) return html`<${Header} title="Position" back /><${ErrorBox} error="Position not found" />`;
   const holder = person(p.holderUserId);
-  const r = region(p.regionId);
   const projects = M().projects.filter((pj) => pj.positionId === id || pj.approvedByPositionId === id);
   const problems = posts.data?.filter((x) => x.tag === 'problem') || [];
   const updates = posts.data?.filter((x) => x.actingAs.type === 'position' && x.actingAs.id === id) || [];
-  const responded = problems.filter((x) => x.respondedByPositions?.includes(id)).length;
+  const st = stats.data;
   const mine = s.meta.me && p.holderUserId === s.meta.me.id;
   return html`
-    <${Header} title=${p.title} sub=${r.name} back />
+    <${Header} title=${p.title} sub=${regionName(p.regionId)} back />
     <section class="profile">
       <div class="profile-top">
-        <${Avatar} name=${holder?.name || p.title} size=${84} ring="official" />
+        <${Avatar} name=${holder?.name || p.title} size=${88} ring="official" />
         <div class="profile-stats">
-          <div><b>${problems.length}</b><span>problems</span></div>
-          <div><b>${problems.length ? Math.round((responded / problems.length) * 100) + '%' : '—'}</b><span>responded</span></div>
-          <div><b>${projects.length}</b><span>projects</span></div>
+          <div><b>${st ? fmtNum(st.problems) : '—'}</b><span>problems</span></div>
+          <div><b>${st ? fmtNum(st.updates) : '—'}</b><span>updates</span></div>
+          <div><b>${st?.problems ? pct(st.responded / st.problems) : '—'}</b><span>responded</span></div>
         </div>
       </div>
       <div class="profile-name">${holder ? html`<a href=${'#/person/' + holder.id}>${holder.name}</a> <span class="verified">✓</span>` : html`<i>Vacant position</i>`}</div>
-      <div class="profile-sub">${p.title} · <a href=${'#/region/' + r.id}>${r.name}</a> ${p.isHead ? html`<span class="head-badge">Area head</span>` : null}</div>
-      ${holder?.party ? html`<div class="profile-sub"><${Party} party=${holder.party} /> · ${p.kind}</div>` : html`<div class="profile-sub muted">${p.kind}</div>`}
-      <div class="btn-row">${mine ? html`<a class="btn btn-primary grow" href="#/dashboard" onClick=${() => setMode('position:' + id)}>Open dashboard</a>` : html`<${FollowButton} type="position" id=${id} />`}<a class="btn btn-ghost" href=${'#/new?tag=problem'}>Report problem</a></div>
+      <div class="profile-sub">${p.title} · <a href=${'#/region/' + p.regionId}>${regionName(p.regionId)}</a> ${p.isHead ? html`<span class="head-badge">Area head</span>` : null}</div>
+      ${holder?.party ? html`<div class="profile-sub"><${Party} party=${holder.party} /> · ${p.kind}</div>` : html`<div class="profile-sub dim">${p.kind}</div>`}
+      <div class="btn-row">${mine ? html`<a class="btn btn-primary grow" href="#/dashboard" onClick=${() => setMode('position:' + id)}>Open dashboard</a>` : html`<${FollowButton} type="position" id=${id} />`}<a class="btn btn-ghost" href="#/new?tag=problem">Report problem</a></div>
     </section>
     <section class="card pad"><div class="sec-h"><b>Responsible for</b></div><ul class="bullets">${p.responsibilities.map((x) => html`<li>${x}</li>`)}</ul><div class="chips">${p.categories.map((c) => html`<span class="chip">${c}</span>`)}</div></section>
-    <section class="card pad"><div class="sec-h"><b>Budget allocated</b><b>${inr(p.budget)}</b></div><div class="muted small">Annual allocation managed by this position (sample).</div></section>
-    <${Tabs} value=${tab} onChange=${setTab} tabs=${[['posts', 'Updates'], ['problems', 'Problems', problems.filter((x) => x.status !== 'resolved').length || null], ['contractors', 'Contractors'], ['projects', 'Projects']]} />
-    ${tab === 'posts' ? (posts.loading ? html`<${Loading} />` : updates.length ? updates.map((x) => html`<${PostCard} p=${x} compact />`) : html`<${Empty}>No official updates yet.</${Empty}>`) : null}
-    ${tab === 'problems' ? (posts.loading ? html`<${Loading} />` : problems.length ? problems.map((x) => html`<${PostCard} p=${x} compact />`) : html`<${Empty}>No problems assigned.</${Empty}>`) : null}
+    <${PositionBudget} p=${p} st=${st} />
+    <${Tabs} value=${tab} onChange=${setTab} tabs=${[['posts', 'Updates'], ['problems', 'Problems'], ['contractors', 'Contractors'], ['projects', 'Projects']]} />
+    ${tab === 'posts' ? (posts.loading ? html`<${Loading} />` : updates.length ? html`<div class="feed">${updates.map((x) => html`<${PostCard} p=${x} compact />`)}</div>` : html`<${Empty}>No official updates yet.</${Empty}>`) : null}
+    ${tab === 'problems' ? (posts.loading ? html`<${Loading} />` : problems.length ? html`<div class="feed">${problems.map((x) => html`<${PostCard} p=${x} compact />`)}</div>` : html`<${Empty}>No problems assigned.</${Empty}>`) : null}
     ${tab === 'contractors' ? html`<section class="list">${p.contractorIds.length ? p.contractorIds.map((cid) => html`<${ContractorRow} c=${contractor(cid)} />`) : html`<${Empty}>No contractors assigned.</${Empty}>`}</section>` : null}
     ${tab === 'projects' ? html`<section class="list">${projects.length ? projects.map((pj) => html`<${ProjectRow} pj=${pj} />`) : html`<${Empty}>No projects.</${Empty}>`}</section>` : null}`;
+}
+
+function PositionBudget({ p, st }) {
+  const r = region(p.regionId);
+  const areaTotal = Object.values(r.budget || {}).reduce((a, b) => a + b, 0);
+  const peers = positionsIn(p.regionId).filter((x) => x.budget > 0);
+  if (!p.budget) return html`<section class="card pad"><div class="sec-h"><b>Budget</b><span class="dim">No budget managed directly</span></div><a class="link" href=${'#/region/' + p.regionId + '?tab=budget'}>See ${r.shortName || r.name}'s budget ›</a></section>`;
+  return html`<${BudgetPanel} title="Budget managed by this position" entries=${peers.map((x) => [x.id === p.id ? x.title + ' (this)' : x.title, x.budget])}
+    context=${`${inr(p.budget)} — ${areaTotal ? ((p.budget / areaTotal) * 100).toFixed(0) + '% of the area budget (' + inr(areaTotal) + ')' : ''}${st ? ` · ${fmtNum(st.open)} open problems assigned` : ''}`} />`;
 }
 
 // ---------------- Contractor profile ----------------
 export function ContractorPage({ id }) {
   const c = contractor(id);
-  const [tab, setTab] = useState('current');
-  const posts = useData(() => api('/posts?contractor=' + id), [id]);
+  const [tab, setTab] = useState('score');
+  const sc = useData(() => api(`/contractors/${id}/scorecard`), [id]);
+  const wos = useData(() => (tab === 'jobs' || tab === 'flags' ? api(`/workorders?contractor=${id}&limit=60${tab === 'flags' ? '&flag=any' : ''}`) : Promise.resolve(null)), [id, tab]);
   if (!c) return html`<${Header} title="Contractor" back /><${ErrorBox} error="Contractor not found" />`;
-  const projects = M().projects.filter((pj) => pj.contractorId === id);
-  const current = projects.filter((pj) => pj.status !== 'completed');
-  const past = projects.filter((pj) => pj.status === 'completed');
-  const bids = M().projects.filter((pj) => pj.bids.some((b) => b.contractorId === id) && pj.contractorId !== id);
-  const total = projects.reduce((a, pj) => a + pj.budget, 0);
+  const projects = M().projects.filter((pj) => pj.contractorId === id || pj.bids.some((b) => b.contractorId === id));
+  const d = sc.data;
   return html`
     <${Header} title=${c.name} sub="Contractor" back />
     <section class="profile">
-      <div class="profile-top"><${Avatar} name=${c.name} size=${84} ring="contractor" />
-        <div class="profile-stats"><div><b>${current.length}</b><span>active</span></div><div><b>${past.length}</b><span>completed</span></div><div><b>${inr(total)}</b><span>awarded</span></div></div>
+      <div class="profile-top"><${Avatar} name=${c.name} size=${88} ring="contractor" />
+        <div class="profile-stats"><div><b>${d ? fmtNum(d.jobs) : '—'}</b><span>jobs</span></div><div><b>${d ? rs(d.spend) : '—'}</b><span>billed</span></div><div><b>${d ? d.score : '—'}</b><span>score</span></div></div>
       </div>
       <div class="profile-name">${c.name}</div>
-      <div class="profile-sub">${c.type === 'group' ? 'Group of citizens' : c.type === 'individual' ? 'Individual contractor' : 'Registered company'} · ${c.specialties.join(', ')}</div>
-      <div class="profile-sub muted small">Members: ${c.memberUserIds.map((u, i) => html`${i ? ', ' : ''}<a href=${'#/person/' + u}>${person(u)?.name}</a>`)}</div>
+      <div class="profile-sub">${c.type === 'group' ? 'Group of citizens' : c.type === 'individual' ? 'Individual contractor' : 'Registered company'}${c.empanelledSince ? ` · empanelled since ${c.empanelledSince}` : ''}</div>
+      <div class="btn-row"><${FollowButton} type="contractor" id=${id} /></div>
+      <div class="profile-sub dim small">Members: ${c.memberUserIds.map((u, i) => html`${i ? ', ' : ''}<a href=${'#/person/' + u}>${person(u)?.name}</a>`)}</div>
     </section>
-    <section class="card pad"><div class="sec-h"><b>Assigned by</b></div>
-      ${c.assignedBy.map((a) => { const p = position(a.positionId); return html`<a class="row" href=${'#/position/' + a.positionId}><div class="row-main"><div class="row-t">${p?.title}</div><div class="row-s">for ${region(a.regionId)?.name} · since ${new Date(a.at).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}</div></div></a>`; })}
-    </section>
-    <${Tabs} value=${tab} onChange=${setTab} tabs=${[['current', 'Working on', current.length || null], ['past', 'Past'], ['bids', 'Bids'], ['updates', 'Updates']]} />
-    ${tab === 'current' ? html`<section class="list">${current.length ? current.map((pj) => html`<${ProjectDetailRow} pj=${pj} />`) : html`<${Empty}>No active projects.</${Empty}>`}</section>` : null}
-    ${tab === 'past' ? html`<section class="list">${past.length ? past.map((pj) => html`<${ProjectDetailRow} pj=${pj} />`) : html`<${Empty}>No completed projects yet.</${Empty}>`}</section>` : null}
-    ${tab === 'bids' ? html`<section class="list">${bids.length ? bids.map((pj) => { const b = pj.bids.find((x) => x.contractorId === id); return html`<a class="row" href=${'#/project/' + pj.id}><div class="row-main"><div class="row-t">${pj.title}</div><div class="row-s">Bid ${inr(b.amount)} · ${b.timelineDays} days · <${StatusPill} status=${pj.status} /></div></div></a>`; }) : html`<${Empty}>No open bids.</${Empty}>`}</section>` : null}
-    ${tab === 'updates' ? (posts.loading ? html`<${Loading} />` : posts.data.length ? posts.data.map((x) => html`<${PostCard} p=${x} compact />`) : html`<${Empty}>No posts.</${Empty}>`) : null}`;
-}
-
-function ProjectDetailRow({ pj }) {
-  const pct = pj.budget ? Math.min(100, Math.round((pj.spent / pj.budget) * 100)) : 0;
-  return html`<a class="card pad proj-card" href=${'#/project/' + pj.id}>
-    <div class="row-t">${pj.title}</div>
-    <div class="row-s">${region(pj.regionId).name} · for ${position(pj.positionId)?.title} · <${StatusPill} status=${pj.status} /></div>
-    <div class="budget-l"><span>Spent ${inr(pj.spent)} of ${inr(pj.budget)}</span><b>${pct}%</b></div>
-    <div class="bar"><i style=${`width:${pct}%`}></i></div>
-  </a>`;
+    <${Tabs} value=${tab} onChange=${setTab} tabs=${[['score', 'Scorecard'], ['jobs', 'Jobs'], ['flags', 'Flags'], ['assigned', 'Assigned by'], ['projects', 'Projects']]} />
+    ${tab === 'score' ? (sc.loading ? html`<${Loading} />` : d ? html`<${ScorecardPanel} sc=${d} />
+      <section class="card pad"><div class="sec-h"><b>Durability by method</b></div>${d.methodStats.map((m) => html`<div class="budget-row"><div class="budget-l"><span>${m.m} (${m.n} jobs)</span><b class=${m.reopen > d.peer.reopen + 0.05 ? 'bad' : ''}>${pct(m.reopen)} failed</b></div><div class="bar over"><i style=${`width:${m.reopen * 100}%`}></i></div></div>`)}</section>` : html`<${Empty}>No repair jobs recorded.</${Empty}>`) : null}
+    ${tab === 'jobs' || tab === 'flags' ? (wos.loading || !wos.data ? html`<${Loading} />` : html`<div class="dim small pad-x">${fmtNum(wos.data.total)} jobs · ${rs(wos.data.amount)}</div><section class="list">${wos.data.items.map((w) => html`<${WorkOrderRow} w=${w} />`)}</section>`) : null}
+    ${tab === 'assigned' ? html`<section class="list">${c.assignedBy.map((a) => html`<a class="row" href=${'#/position/' + a.positionId}><div class="row-main"><div class="row-t">${position(a.positionId)?.title}</div><div class="row-s">for ${regionName(a.regionId)} · since ${new Date(a.at).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}</div></div></a>`)}</section>` : null}
+    ${tab === 'projects' ? html`<section class="list">${projects.length ? projects.map((pj) => html`<${ProjectRow} pj=${pj} />`) : html`<${Empty}>No projects or bids.</${Empty}>`}</section>` : null}`;
 }
 
 // ---------------- Project view ----------------
@@ -228,12 +331,13 @@ export function ProjectPage({ id }) {
   const pos = position(pj.positionId);
   const isOwner = me && pos?.holderUserId === me.id;
   const myCons = me ? me.contractorIds : [];
-  const pct = pj.budget ? Math.min(100, Math.round((pj.spent / pj.budget) * 100)) : 0;
+  const pctv = pj.budget ? Math.min(100, Math.round((pj.spent / pj.budget) * 100)) : 0;
   const bids = [...pj.bids].sort((a, b) => a.amount - b.amount);
   const minAmt = bids[0]?.amount, minDays = Math.min(...bids.map((b) => b.timelineDays));
   const award = async (contractorId) => { try { await post(`/projects/${id}/award`, { contractorId }); toast('Contract awarded'); } catch (e) { toast(e.message); } };
   const progressPosts = (updates.data || []).filter((x) => x.tag === 'progress');
   const problems = (updates.data || []).filter((x) => x.tag === 'problem');
+  const road = pj.roadId && M().roads.find((r) => r.id === pj.roadId);
   return html`
     <${Header} title="Project" back />
     <section class="card pad">
@@ -241,36 +345,38 @@ export function ProjectPage({ id }) {
       <h2 class="h2">${pj.title}</h2>
       <p>${pj.description}</p>
       <div class="budget-l"><span>Budget allocated</span><b>${inr(pj.budget)}</b></div>
-      <div class="budget-l"><span>Spent so far</span><b>${inr(pj.spent)} (${pct}%)</b></div>
-      <div class="bar"><i style=${`width:${pct}%`}></i></div>
+      <div class="budget-l"><span>Spent so far</span><b>${inr(pj.spent)} (${pctv}%)</b></div>
+      <div class="bar"><i style=${`width:${pctv}%`}></i></div>
       ${isOwner ? html`<div class="btn-row wrap"><button class="btn btn-ghost btn-sm" onClick=${() => setEditOpen(true)}>Update status / spend</button><a class="btn btn-progress btn-sm" href=${`#/new?tag=progress&project=${id}&link=${pj.linkedProblemIds.join(',')}`}>Post progress update</a></div>` : null}
       ${myCons.includes(pj.contractorId) ? html`<div class="btn-row"><a class="btn btn-progress btn-sm" href=${`#/new?tag=progress&project=${id}&link=${pj.linkedProblemIds.join(',')}`}>Post site update</a></div>` : null}
     </section>
     <section class="card pad accountable">
       <div class="sec-h"><b>Who is accountable</b></div>
-      <div class="kv"><span>Area</span><a href=${'#/region/' + pj.regionId}>${region(pj.regionId).name}</a></div>
+      <div class="kv"><span>Area</span><a href=${'#/region/' + pj.regionId}>${regionName(pj.regionId)}</a></div>
+      ${road ? html`<div class="kv"><span>Road</span><a href=${'#/road/' + road.id}>${road.name} · segment ${road.segment}</a></div>` : null}
       <div class="kv"><span>Position</span><a href=${'#/position/' + pj.positionId}>${pos?.title}</a></div>
       <div class="kv"><span>Person</span>${person(pos?.holderUserId) ? html`<a href=${'#/person/' + pos.holderUserId}>${person(pos.holderUserId).name}</a>` : 'Vacant'}</div>
       <div class="kv"><span>Approved by</span><span>${position(pj.approvedByPositionId)?.title} — ${person(pj.approvedByUserId)?.name || '—'}</span></div>
       <div class="kv"><span>Contractor</span>${pj.contractorId ? html`<a href=${'#/contractor/' + pj.contractorId}>${contractor(pj.contractorId).name}</a>` : html`<i>Not awarded yet</i>`}</div>
-      <div class="kv"><span>Timeline</span><span>${pj.startDate ? new Date(pj.startDate).toLocaleDateString('en-IN') : '—'} → ${pj.endDate ? new Date(pj.endDate).toLocaleDateString('en-IN') : 'ongoing'}</span></div>
+      <div class="kv"><span>Timeline</span><span>${fmtDate(pj.startDate)} → ${pj.endDate ? fmtDate(pj.endDate) : 'ongoing'}</span></div>
     </section>
     <section class="card pad">
-      <div class="sec-h"><b>Bidders comparison</b><span class="muted small">${bids.length} bids</span></div>
+      <div class="sec-h"><b>Bidders compared</b><span class="dim small">${bids.length} bids</span></div>
       ${bids.length ? html`<div class="table-wrap"><table class="bids">
         <thead><tr><th>Contractor</th><th>Bid</th><th>Days</th><th></th></tr></thead>
         <tbody>${bids.map((b) => html`<tr class=${b.contractorId === pj.contractorId ? 'won' : ''}>
-          <td><a href=${'#/contractor/' + b.contractorId}>${contractor(b.contractorId)?.name}</a>${b.note ? html`<div class="muted small">${b.note}</div>` : null}</td>
+          <td><a href=${'#/contractor/' + b.contractorId}>${contractor(b.contractorId)?.name}</a>${b.note ? html`<div class="dim small">${b.note}</div>` : null}</td>
           <td>${inr(b.amount)}${b.amount === minAmt ? html`<div class="best">lowest</div>` : null}</td>
           <td>${b.timelineDays}${b.timelineDays === minDays ? html`<div class="best">fastest</div>` : null}</td>
           <td>${b.contractorId === pj.contractorId ? html`<span class="status st-resolved">Awarded</span>` : isOwner && pj.status === 'bidding' ? html`<button class="btn btn-primary btn-sm" onClick=${() => award(b.contractorId)}>Award</button>` : null}</td>
-        </tr>`)}</tbody></table></div>` : html`<div class="muted small">No bids yet.</div>`}
+        </tr>`)}</tbody></table></div>
+        <a class="link small" href="#/scorecards">Compare their scorecards before awarding ›</a>` : html`<div class="dim small">No bids yet.</div>`}
       ${pj.status === 'bidding' && myCons.length ? html`<button class="btn btn-primary btn-block" onClick=${() => setBidOpen(true)}>Place a bid</button>` : null}
     </section>
     <div class="sec-h pad-x"><b>Linked problems</b></div>
-    ${problems.length ? problems.map((x) => html`<${PostCard} p=${x} compact />`) : html`<${Empty}>No linked problem posts.</${Empty}>`}
+    ${problems.length ? html`<div class="feed">${problems.map((x) => html`<${PostCard} p=${x} compact />`)}</div>` : html`<${Empty}>No linked problem posts.</${Empty}>`}
     <div class="sec-h pad-x"><b>Progress updates</b></div>
-    ${progressPosts.length ? progressPosts.map((x) => html`<${PostCard} p=${x} compact />`) : html`<${Empty}>No updates yet.</${Empty}>`}
+    ${progressPosts.length ? html`<div class="feed">${progressPosts.map((x) => html`<${PostCard} p=${x} compact />`)}</div>` : html`<${Empty}>No updates yet.</${Empty}>`}
     <${BidSheet} open=${bidOpen} onClose=${() => setBidOpen(false)} pj=${pj} contractorIds=${myCons} />
     <${EditProjectSheet} open=${editOpen} onClose=${() => setEditOpen(false)} pj=${pj} />`;
 }
@@ -298,9 +404,8 @@ function EditProjectSheet({ open, onClose, pj }) {
 
 // ---------------- Person / citizen page ----------------
 export function PersonPage({ id }) {
-  const s = useStore();
   const info = useData(() => api('/people/' + id), [id]);
-  const posts = useData(() => api('/posts?author=' + id), [id]);
+  const posts = useData(() => api('/posts?author=' + id + '&all=1'), [id]);
   if (info.loading) return html`<${Header} title="Profile" back /><${Loading} />`;
   if (info.error) return html`<${Header} title="Profile" back /><${ErrorBox} error=${info.error} />`;
   const p = info.data.person;
@@ -308,15 +413,15 @@ export function PersonPage({ id }) {
   return html`
     <${Header} title=${anon ? 'Citizen' : p.name} back />
     <section class="profile">
-      <div class="profile-top"><${Avatar} name=${p.name} kind=${p.kind} size=${84} ring=${anon ? null : 'official'} />
+      <div class="profile-top"><${Avatar} name=${p.name} kind=${p.kind} size=${88} ring=${anon ? null : 'official'} />
         <div class="profile-stats"><div><b>${posts.data?.length ?? '—'}</b><span>posts</span></div><div><b>${info.data.followers}</b><span>followers</span></div><div><b>${posts.data?.reduce((a, x) => a + x.upvoteCount, 0) ?? '—'}</b><span>upvotes</span></div></div>
       </div>
       <div class="profile-name">${p.name}</div>
-      <div class="profile-sub">${anon ? 'Verified citizen · identity hidden' : html`<${Party} party=${p.party} />`} · <a href=${'#/region/' + p.regionId}>${region(p.regionId)?.name}</a></div>
+      <div class="profile-sub">${anon ? 'Verified citizen · identity hidden' : html`<${Party} party=${p.party} />`} · <a href=${'#/region/' + p.regionId}>${regionName(p.regionId)}</a></div>
       ${!info.data.isMe && p.kind !== 'admin' ? html`<div class="btn-row"><${FollowButton} type="user" id=${id} /></div>` : null}
     </section>
     ${!anon && p.positionIds?.length ? html`<section class="card pad"><div class="sec-h"><b>Positions held</b></div>${p.positionIds.map((pid) => html`<${PositionRow} p=${position(pid)} showRegion right=${null} />`)}</section>` : null}
     ${!anon && p.contractorIds?.length ? html`<section class="card pad"><div class="sec-h"><b>Contractor</b></div>${p.contractorIds.map((cid) => html`<${ContractorRow} c=${contractor(cid)} />`)}</section>` : null}
-    <div class="sec-h pad-x"><b>${anon ? 'Problem posts' : 'Posts as citizen'}</b></div>
-    ${posts.loading ? html`<${Loading} />` : posts.data.length ? posts.data.map((x) => html`<${PostCard} p=${x} compact />`) : html`<${Empty}>No posts yet.</${Empty}>`}`;
+    <div class="sec-h pad-x"><b>${anon ? 'Posts' : 'Posts as a citizen'}</b></div>
+    ${posts.loading ? html`<${Loading} />` : posts.data.length ? html`<div class="feed">${posts.data.map((x) => html`<${PostCard} p=${x} compact />`)}</div>` : html`<${Empty}>No posts yet.</${Empty}>`}`;
 }
